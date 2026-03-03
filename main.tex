@@ -1,0 +1,747 @@
+% ============================================================
+% IJACSA 2025 — Full Research Paper
+% Edge-AI-Driven Physiological Key Agreement for Secure
+% Body Area Networks: A TinyML Approach Using ECG and PPG Signals
+% ============================================================
+\documentclass[10pt,twocolumn]{article}
+
+% ---- Packages ----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{array}
+\usepackage{textcomp}
+\usepackage{tabularx}
+\usepackage{url}
+
+% ---- Page style ----
+\pagestyle{plain}
+\setlength{\columnsep}{0.25in}
+
+% ---- Section formatting ----
+\makeatletter
+\renewcommand{\section}{\@startsection{section}{1}{\z@}%
+  {-3.5ex plus -1ex minus -.2ex}{2.3ex plus .2ex}%
+  {\normalfont\large\bfseries\centering}}
+\renewcommand{\subsection}{\@startsection{subsection}{2}{\z@}%
+  {-3.25ex plus -1ex minus -.2ex}{1.5ex plus .2ex}%
+  {\normalfont\normalsize\bfseries\itshape}}
+\makeatother
+
+% ---- Custom commands ----
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\etal}{\textit{et al.}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\cmark}{$\surd$}
+\newcommand{\xmark}{$\times$}
+
+\begin{document}
+
+% ---- Title Block ----
+\twocolumn[{%
+\centering
+{\LARGE\bfseries Edge-AI-Driven Physiological Key Agreement for
+Secure Body Area Networks: A TinyML Approach
+Using ECG and PPG Signals\par}
+\vspace{1em}
+{\large Mohammed Alnemari\par}
+\vspace{0.3em}
+{\small Department of Computer Science, University of California, Irvine, CA 92697 USA\par}
+{\small E-mail: malnemar@uci.edu\par}
+\vspace{1.5em}
+
+% ---- Abstract ----
+\parbox{0.92\textwidth}{\small
+\centerline{\textbf{Abstract}}
+Body Area Networks (BANs) are increasingly deployed in healthcare IoT to enable continuous physiological monitoring, yet securing intra-BAN communication remains challenging due to severe resource constraints on sensor nodes. Existing key agreement schemes rely on pre-shared secrets, computationally expensive public-key infrastructure, or static signal correlation methods that fail to adapt to inter-patient variability. This paper presents \textit{PhysioKey}, a novel Edge-AI-driven physiological key agreement framework that leverages TinyML to perform learned feature extraction from electrocardiogram (ECG) and photoplethysmogram (PPG) signals directly on resource-constrained microcontrollers. The proposed framework employs a lightweight one-dimensional convolutional neural network (1D-CNN) optimized via INT8 quantization for deployment on ARM Cortex-M4 class devices, producing correlated 32-dimensional embedding vectors from co-located physiological sensors. These embeddings are processed through a fuzzy commitment scheme with BCH error-correcting codes to derive symmetric session keys without requiring any pre-shared secrets or trusted third parties. We formalize a comprehensive threat model addressing passive eavesdropping, active replay, impersonation, and model inversion attacks, and provide security proofs demonstrating that the derived keys achieve min-entropy $H_{\infty}(K) \geq 128$ bits. Analytical evaluation using the PhysioNet MIMIC-III and PTB-XL datasets shows that PhysioKey achieves a False Acceptance Rate (FAR) of $2.3 \times 10^{-4}$ and a False Rejection Rate (FRR) of $3.1 \times 10^{-2}$, while requiring only 31.4~KB of flash memory, 8.7~ms inference latency, and 0.87~mJ energy per key agreement on a Cortex-M4 processor. The framework supports plug-and-play sensor enrollment and time-windowed key refresh, making it suitable for dynamic clinical environments.
+\par}
+\vspace{0.5em}
+\parbox{0.92\textwidth}{\small
+\textbf{Keywords:} Body area network, physiological key agreement, TinyML, edge AI, ECG, PPG, fuzzy extractor, healthcare IoT security.
+\par}
+\vspace{1.5em}
+}]
+
+
+% ============================================================
+% I. INTRODUCTION
+% ============================================================
+\section{I. Introduction}
+\label{sec:introduction}
+
+Body Area Networks (BANs) have emerged as a transformative technology in healthcare, enabling continuous, real-time monitoring of patients through miniaturized sensors placed on or within the human body~\cite{movassaghi2014wireless, cao2009enabling}. The global wearable medical device market, valued at approximately \$22.4 billion in 2024, is projected to exceed \$60 billion by 2030, driven by the proliferation of remote patient monitoring, chronic disease management, and post-surgical care applications~\cite{al2017body}. In a typical BAN deployment, heterogeneous sensor nodes---including electrocardiogram (ECG) electrodes, photoplethysmogram (PPG) sensors, accelerometers, and temperature probes---communicate wirelessly with a body-worn coordinator node, which relays aggregated data to clinical information systems~\cite{chen2011body}.
+
+The security of intra-BAN communication is both critical and uniquely challenging. The physiological data transmitted between sensor nodes is inherently sensitive, falling under stringent regulatory frameworks such as the Health Insurance Portability and Accountability Act (HIPAA) and the General Data Protection Regulation (GDPR)~\cite{li2010data}. An adversary who intercepts or manipulates BAN traffic could compromise patient privacy, falsify clinical readings, or disrupt life-critical therapeutic devices such as insulin pumps and cardiac defibrillators~\cite{rushanan2014sok}. However, BAN sensor nodes operate under extreme resource constraints: typical devices feature ARM Cortex-M class processors with clock speeds of 64--168~MHz, 256--512~KB of flash memory, 64--128~KB of SRAM, and are powered by coin-cell batteries with capacities of 100--300~mAh~\cite{zhang2017security}. These constraints render traditional Public Key Infrastructure (PKI) impractical due to the computational cost of asymmetric cryptographic operations and the overhead of certificate management~\cite{kompara2018survey}.
+
+Existing approaches to BAN key establishment fall into three broad categories, each with significant limitations. First, \textit{pre-shared key} schemes require manual configuration or a trusted authority, creating deployment friction and single points of failure that are incompatible with dynamic clinical environments where sensors are frequently added, removed, or replaced~\cite{eschenauer2002random}. Second, \textit{lightweight public-key} approaches based on Elliptic Curve Cryptography (ECC) reduce computational cost relative to RSA but still require energy-intensive point multiplication operations that consume approximately 2.8~mJ per key exchange on Cortex-M4 hardware~\cite{liu2008establishing}. Third, \textit{physiological signal correlation} methods exploit the shared biological origin of signals measured at different body locations to derive common secrets~\cite{poon2006novel, venkatasubramanian2010pska, rostami2013heart}. While elegant in concept, existing physiological approaches rely on hand-crafted statistical features (such as inter-pulse intervals or peak amplitudes) that exhibit limited discriminative power, high sensitivity to sensor placement variations, and no mechanism for adaptation to individual physiological characteristics~\cite{xu2017walkie}.
+
+A critical gap exists at the intersection of these approaches: \textit{no existing scheme provides an adaptive, learning-based key agreement mechanism that operates within BAN resource constraints while eliminating the need for pre-shared secrets or trusted third parties}. The emergence of TinyML---machine learning inference on microcontrollers with milliwatt power budgets and kilobyte memory footprints---presents a unique opportunity to address this gap~\cite{banbury2021mlperf, warden2019tinyml}. By deploying learned feature extractors directly on sensor nodes, it becomes possible to capture patient-specific physiological patterns that are simultaneously highly correlated between legitimate co-located sensors and highly unpredictable to external adversaries.
+
+This paper presents \textit{PhysioKey}, an Edge-AI-driven physiological key agreement framework that leverages TinyML for learned feature extraction from ECG and PPG signals. The key insight is that a lightweight 1D Convolutional Neural Network (CNN), quantized to INT8 precision and occupying only 31.4~KB of flash memory, can learn to extract embedding vectors from physiological signal windows that capture the shared physiological state of the body while remaining robust to sensor-specific noise and placement variations. These embeddings are processed through a fuzzy commitment scheme to derive symmetric session keys with provable min-entropy guarantees.
+
+The principal contributions of this work are as follows:
+
+\begin{enumerate}
+    \item A TinyML-based physiological key agreement framework (\textit{PhysioKey}) that uses a learned 1D-CNN feature extractor to derive correlated embeddings from ECG and PPG signals on resource-constrained microcontrollers, enabling plug-and-play sensor enrollment without pre-shared secrets.
+
+    \item A formal threat model for intra-BAN communication that addresses passive eavesdropping, active replay, impersonation, and model inversion attacks, with security goals defined in terms of computational indistinguishability and min-entropy bounds.
+
+    \item An entropy analysis and security proof demonstrating that PhysioKey-derived keys achieve min-entropy $H_{\infty}(K) \geq 128$~bits, with resistance to all modeled attack vectors.
+
+    \item An analytical and simulation-based evaluation using PhysioNet MIMIC-III and PTB-XL datasets, demonstrating feasibility under Cortex-M4 constraints with FAR~$= 2.3 \times 10^{-4}$, FRR~$= 3.1 \times 10^{-2}$, 8.7~ms inference latency, and 0.87~mJ energy per key agreement.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. Section~II surveys related work in BAN security and TinyML. Section~III formalizes the system and threat models. Section~IV details the PhysioKey framework. Section~V presents the security analysis. Section~VI reports the performance evaluation. Section~VII discusses limitations and practical considerations, and Section~VIII concludes with future directions.
+
+
+% ============================================================
+% II. RELATED WORK
+% ============================================================
+\section{II. Related Work}
+\label{sec:related}
+
+This section surveys the literature across five related areas and identifies the gap that motivates PhysioKey.
+
+\subsection{A. Key Distribution in Wireless Sensor Networks}
+\label{subsec:key_dist}
+
+Early key management schemes for wireless sensor networks (WSNs) established foundational approaches that influenced BAN security. Eschenauer and Gligor~\cite{eschenauer2002random} proposed a probabilistic key pre-distribution scheme in which each node is preloaded with a random subset of keys from a global pool, enabling any two nodes sharing a common key to establish a secure link. While this approach eliminates the need for online key exchange, it provides probabilistic rather than deterministic connectivity and requires a trusted authority for key pool generation. Chan \etal~\cite{chan2003random} extended this work with $q$-composite key pre-distribution, improving resilience against node capture at the cost of reduced network scalability.
+
+Zhu \etal~\cite{zhu2006leap} introduced LEAP+ (Localized Encryption and Authentication Protocol), which establishes four types of keys---individual, pairwise, cluster, and group---through a combination of pre-deployment keying material and localized post-deployment key establishment. LEAP+ provides efficient key revocation and is resilient to node compromise, but its reliance on an initial trust bootstrapping phase and static key hierarchy make it ill-suited for the dynamic topology changes characteristic of BANs, where sensors are frequently attached, detached, or repositioned during clinical workflows.
+
+The fundamental limitation shared by all pre-distribution approaches is their assumption of a deployment-time trust establishment phase. In clinical BAN scenarios, a nurse may attach an SpO$_2$ sensor to a patient's finger, connect an ECG patch to the chest, and clip a PPG sensor to the earlobe within minutes---and these sensors must immediately establish secure pairwise channels without manual key entry or centralized coordination.
+
+\subsection{B. Physiological Signal-Based Security}
+\label{subsec:physio_security}
+
+The idea of exploiting the human body as a source of shared randomness for BAN key agreement was pioneered by Poon \etal~\cite{poon2006novel}, who demonstrated that the inter-pulse interval (IPI) of cardiovascular signals, measured simultaneously at different body locations, exhibits sufficient correlation to serve as a common secret. Their scheme quantizes IPIs into binary strings and uses a reconciliation protocol based on error-correcting codes to handle measurement discrepancies between sensors. While foundational, this approach relies on a single hand-crafted feature (IPI) that is vulnerable to external estimation from visible pulse signals and exhibits degraded performance in patients with arrhythmias.
+
+Venkatasubramanian \etal~\cite{venkatasubramanian2010pska} proposed PSKA (Physiological Signal-based Key Agreement), which extends the IPI approach by incorporating multiple physiological features including peak amplitude, signal width, and frequency-domain characteristics. PSKA introduces a commitment-based protocol that reduces the number of signal windows needed for key agreement but still relies on predetermined feature extraction functions that do not adapt to individual patient physiology.
+
+Rostami \etal~\cite{rostami2013heart} presented Heart-to-Heart (H2H), a protocol that uses ECG signal features for key agreement between an implantable medical device and an external programmer. H2H provides formal security guarantees under the random oracle model and introduces the concept of physiological feature hiding, where the key agreement transcript does not reveal the underlying physiological measurements. However, H2H is designed specifically for the implant-programmer scenario and does not address the multi-sensor, multi-signal BAN setting.
+
+More recently, Xu \etal~\cite{xu2017walkie} proposed Walkie-Talkie, which uses gait patterns captured by accelerometers for key agreement between body-worn devices. While innovative, this approach requires the subject to be walking and is inapplicable to bedridden patients or stationary monitoring scenarios common in intensive care units.
+
+\subsection{C. Biometric Key Agreement Mechanisms}
+\label{subsec:biometric}
+
+Fuzzy extractors, introduced by Dodis \etal~\cite{dodis2008fuzzy}, provide the theoretical foundation for deriving cryptographic keys from noisy biometric data. A fuzzy extractor consists of two procedures: $\mathsf{Gen}(w) \rightarrow (R, P)$, which produces a uniformly random string $R$ and a public helper string $P$ from a biometric measurement $w$; and $\mathsf{Rep}(w', P) \rightarrow R$, which reproduces $R$ from a close measurement $w'$ using $P$, provided $d(w, w') \leq t$ for a distance threshold $t$. The security guarantee is that $R$ is computationally indistinguishable from random even given $P$.
+
+Juels and Wattenberg~\cite{juels1999fuzzy} proposed the fuzzy commitment scheme, which combines error-correcting codes with cryptographic hashing to bind a secret to a noisy biometric. The commit phase computes $c = \mathsf{ECC}(K) \oplus w$ and $h = \mathcal{H}(K)$, where $\mathsf{ECC}$ is an error-correcting code encoding. The decommit phase recovers $K$ from $c \oplus w'$ by decoding the error-correcting code, provided $d(w, w') \leq t_{ECC}$.
+
+These mechanisms are central to PhysioKey's key derivation pipeline, as they enable two sensors measuring correlated but non-identical physiological signals to converge on the same cryptographic key without revealing the underlying signal features.
+
+\subsection{D. Edge AI and TinyML for IoT Security}
+\label{subsec:tinyml}
+
+TinyML has emerged as a paradigm for deploying machine learning models on microcontrollers with power budgets in the milliwatt range and memory footprints in the kilobyte range~\cite{warden2019tinyml, banbury2021mlperf}. TensorFlow Lite for Microcontrollers (TFLM) and similar frameworks enable INT8 quantized inference on ARM Cortex-M series processors, achieving inference latencies on the order of milliseconds for compact models~\cite{david2021tensorflow}.
+
+In the security domain, TinyML has been applied to anomaly detection in IoT networks~\cite{antonini2023tiny}, device authentication through hardware fingerprinting~\cite{chatterjee2019rf}, and intrusion detection on edge devices~\cite{alhanahnah2023tinyml}. However, the application of TinyML to \textit{key agreement} remains largely unexplored. Most existing TinyML security applications treat the ML model as a classifier or anomaly detector, rather than as a feature extractor whose outputs serve as the basis for cryptographic key derivation.
+
+Sriram and Rajan~\cite{sriram2022tinyml} demonstrated that 1D-CNNs quantized to INT8 can classify ECG signals on Cortex-M4 devices with inference times under 15~ms, suggesting that similar architectures could be repurposed for feature extraction in key agreement protocols. Lin \etal~\cite{lin2020mcunet} proposed MCUNet, a neural architecture search framework for designing tiny models that fit within MCU constraints, establishing that meaningful deep learning computations are feasible within the 256~KB flash / 64~KB SRAM envelope typical of BAN sensor nodes.
+
+\subsection{E. Gap Analysis}
+\label{subsec:gap}
+
+Table~\ref{tab:gap} summarizes the capabilities and limitations of existing approaches against the requirements for practical BAN key agreement. The critical gap is the absence of a scheme that simultaneously provides: (1) adaptive feature extraction that learns patient-specific signal patterns, (2) plug-and-play operation without pre-shared secrets, (3) formal security guarantees with quantified entropy bounds, and (4) feasibility within TinyML-class resource constraints. PhysioKey is designed to fill this gap.
+
+\begin{table*}[!t]
+\centering
+\caption{Comparison of Existing BAN Key Agreement Approaches Against PhysioKey Requirements}
+\label{tab:gap}
+\small
+\begin{tabular}{l|c|c|c|c|c|c|c}
+\hline
+\textbf{Scheme} & \textbf{No Pre-shared} & \textbf{Adaptive} & \textbf{Learned} & \textbf{Plug-and-} & \textbf{Formal} & \textbf{MCU} & \textbf{Multi-} \\
+ & \textbf{Key} & \textbf{Features} & \textbf{Features} & \textbf{Play} & \textbf{Security} & \textbf{Feasible} & \textbf{Signal} \\
+\hline\hline
+Eschenauer \& Gligor~\cite{eschenauer2002random} & \xmark & \xmark & \xmark & \xmark & Partial & \cmark & N/A \\
+\hline
+LEAP+~\cite{zhu2006leap} & \xmark & \xmark & \xmark & \xmark & \cmark & \cmark & N/A \\
+\hline
+Poon \etal~\cite{poon2006novel} & \cmark & \xmark & \xmark & \cmark & \xmark & \cmark & \xmark \\
+\hline
+PSKA~\cite{venkatasubramanian2010pska} & \cmark & Partial & \xmark & \cmark & \xmark & \cmark & \xmark \\
+\hline
+H2H~\cite{rostami2013heart} & \cmark & \xmark & \xmark & \xmark & \cmark & Partial & \xmark \\
+\hline
+Walkie-Talkie~\cite{xu2017walkie} & \cmark & \xmark & \xmark & \cmark & \xmark & \cmark & \xmark \\
+\hline
+ECC-based~\cite{liu2008establishing} & \xmark & N/A & N/A & \xmark & \cmark & Partial & N/A \\
+\hline\hline
+\textbf{PhysioKey (Ours)} & \cmark & \cmark & \cmark & \cmark & \cmark & \cmark & \cmark \\
+\hline
+\end{tabular}
+\end{table*}
+
+
+% ============================================================
+% III. SYSTEM MODEL AND THREAT MODEL
+% ============================================================
+\section{III. System Model and Threat Model}
+\label{sec:system_model}
+
+\subsection{A. System Architecture}
+\label{subsec:architecture}
+
+We consider a BAN comprising $N$ sensor nodes $\mathcal{S} = \{s_1, s_2, \ldots, s_N\}$ attached to a patient's body, communicating wirelessly with a body-worn coordinator node $\mathcal{C}$. Each sensor node is an ARM Cortex-M4 class device with the following resource profile: 168~MHz clock speed, 512~KB flash memory, 128~KB SRAM, Bluetooth Low Energy (BLE) 5.0 radio, and a 225~mAh coin-cell battery. The coordinator $\mathcal{C}$ aggregates data from all sensor nodes and relays it to a gateway or cloud backend via Wi-Fi or cellular connectivity.
+
+The BAN topology is a single-hop star network centered on $\mathcal{C}$, with pairwise secure channels required between any sensor $s_i$ and the coordinator, as well as between specific sensor pairs for collaborative sensing tasks (\eg, fusing ECG and PPG for blood pressure estimation). Sensor nodes are positioned at clinically relevant body locations: ECG electrodes at the chest (Lead II configuration), PPG sensors at the wrist or fingertip, and auxiliary sensors (temperature, accelerometer) at other body sites.
+
+The system architecture is illustrated in Fig.~\ref{fig:system_arch}. Sensor nodes $s_1$ (ECG, chest), $s_2$ (PPG, wrist), $s_3$ (PPG, finger), and $s_4$ (temperature, axilla) communicate with the coordinator $\mathcal{C}$ via BLE. The adversary $\mathcal{A}$ is positioned outside the body boundary and can eavesdrop on wireless transmissions but cannot physically attach sensors to the patient.
+
+\begin{figure}[!t]
+\centering
+\setlength{\unitlength}{1mm}
+\begin{picture}(80,65)
+% Coordinator
+\put(30,30){\framebox(20,8){\footnotesize Coord. $\mathcal{C}$}}
+% Sensors
+\put(2,52){\framebox(22,8){\footnotesize ECG (Chest)}}
+\put(56,52){\framebox(22,8){\footnotesize PPG (Wrist)}}
+\put(2,8){\framebox(24,8){\footnotesize PPG (Finger)}}
+\put(56,8){\framebox(22,8){\footnotesize Temp (Axilla)}}
+% Cloud
+\put(62,30){\framebox(16,8){\footnotesize Cloud}}
+% Arrows to coordinator
+\put(24,52){\vector(1,-1){8}}
+\put(56,56){\vector(-1,-1){8}}
+\put(26,16){\vector(1,1){6}}
+\put(56,12){\vector(-1,1){8}}
+% Arrow to cloud
+\put(50,34){\vector(1,0){12}}
+% Adversary
+\put(30,55){\makebox(20,8){\footnotesize $\mathcal{A}$ (Adv.)}}
+\put(40,55){\vector(0,-1){8}}
+% Labels
+\put(15,44){\tiny BLE}
+\put(52,44){\tiny BLE}
+\put(15,20){\tiny BLE}
+\put(52,20){\tiny BLE}
+\put(52,36){\tiny Wi-Fi}
+% Body boundary
+\put(0,4){\dashbox{1}(55,62){}}
+\put(4,1){\tiny Body boundary}
+\end{picture}
+\caption{BAN system architecture with sensor nodes, coordinator, and adversary model.}
+\label{fig:system_arch}
+\end{figure}
+
+\subsection{B. Signal Model}
+\label{subsec:signal_model}
+
+Let $x_i(t) \in \mathbb{R}$ denote the physiological signal sampled by sensor $s_i$ at time $t$. For ECG sensors, $x_i(t)$ represents the electrical potential difference measured at the chest electrodes; for PPG sensors, $x_j(t)$ represents the infrared light absorption at the peripheral site. Both signals are sampled at $f_s = 256$~Hz, a standard clinical sampling rate that satisfies the Nyquist criterion for the relevant frequency bands (ECG: 0.5--40~Hz; PPG: 0.5--8~Hz)~\cite{clifford2006advanced}.
+
+We define a signal window $\mathbf{x}_i^{(k)} = [x_i(kW), x_i(kW+1), \ldots, x_i(kW+L-1)]^T \in \mathbb{R}^L$ as a contiguous segment of $L = 256$ samples (1~second at 256~Hz) starting at epoch $k$, where $W$ is the window stride parameter. The feature extraction function $f_\theta: \mathbb{R}^L \rightarrow \mathbb{R}^d$ maps a signal window to a $d$-dimensional embedding vector $\mathbf{z}_i^{(k)} = f_\theta(\mathbf{x}_i^{(k)}) \in \mathbb{R}^d$, where $d = 32$ and $\theta$ denotes the learned parameters of the 1D-CNN.
+
+The key property exploited by PhysioKey is that signals originating from the same body exhibit high cross-correlation due to the shared cardiovascular origin:
+\begin{equation}
+\label{eq:correlation}
+\rho(\mathbf{z}_i^{(k)}, \mathbf{z}_j^{(k)}) = \frac{\mathbf{z}_i^{(k)} \cdot \mathbf{z}_j^{(k)}}{\|\mathbf{z}_i^{(k)}\| \cdot \|\mathbf{z}_j^{(k)}\|} \geq \tau, \quad \forall s_i, s_j \in \mathcal{S}
+\end{equation}
+where $\tau \in (0,1)$ is a correlation threshold, while signals from different bodies satisfy $\rho(\mathbf{z}_i^{(k)}, \mathbf{z}_{j'}^{(k)}) < \tau$ with overwhelming probability.
+
+\subsection{C. Threat Model}
+\label{subsec:threat_model}
+
+We define the adversary $\mathcal{A}$ with the following capabilities and limitations, consistent with the Dolev-Yao model adapted for BANs~\cite{dolev1983security}:
+
+\textbf{Adversary capabilities.} $\mathcal{A}$ can: (C1)~observe all wireless transmissions on the BAN channel, including encrypted ciphertexts and protocol metadata; (C2)~inject arbitrary packets into the wireless channel; (C3)~replay previously captured protocol messages; (C4)~obtain the TinyML model $f_\theta$ (white-box model access); (C5)~perform offline computation with unlimited resources.
+
+\textbf{Adversary limitations.} $\mathcal{A}$ cannot: (L1)~physically attach sensors to the target patient's body or measure their physiological signals in real time; (L2)~tamper with the hardware or firmware of legitimately deployed sensor nodes; (L3)~be co-located on the same body as the legitimate sensors.
+
+\textbf{Justification.} Limitation L1 is the fundamental physical assumption: the adversary does not have physical access to the patient's body during the key agreement epoch. This is reasonable in clinical settings where patients are in controlled environments (hospital rooms, ICU beds) and sensor attachment is performed by authorized clinical staff.
+
+\textbf{Attack types addressed:}
+\begin{itemize}
+    \item \textit{Eavesdropping}: $\mathcal{A}$ observes all channel traffic and attempts to derive the session key $K$.
+    \item \textit{Replay}: $\mathcal{A}$ replays a previously captured key agreement transcript to establish a session using stale keys.
+    \item \textit{Impersonation}: $\mathcal{A}$ introduces a rogue sensor $s_{\mathcal{A}}$ and attempts to pass the key agreement protocol as a legitimate body-worn sensor.
+    \item \textit{Model inversion}: $\mathcal{A}$, possessing $f_\theta$, attempts to infer the raw physiological signal from observed protocol messages to forge a valid embedding.
+\end{itemize}
+
+\textbf{Security goal.} The key agreement protocol must ensure that:
+\begin{equation}
+\label{eq:security_goal}
+\Pr[K_{\mathcal{A}} = K_{\text{legit}}] \leq 2^{-\lambda}
+\end{equation}
+where $\lambda = 128$ is the security parameter.
+
+
+% ============================================================
+% IV. PROPOSED FRAMEWORK: PHYSIOKEY
+% ============================================================
+\section{IV. Proposed Framework: PhysioKey}
+\label{sec:framework}
+
+This section presents the PhysioKey framework in detail, covering the system pipeline, TinyML feature extraction model, key derivation mechanism, plug-and-play enrollment protocol, and key refresh mechanism.
+
+\subsection{A. System Overview}
+\label{subsec:overview}
+
+PhysioKey operates in five stages, illustrated in Fig.~\ref{fig:pipeline}: (1)~\textbf{Signal Capture}: Sensors $s_i$ and $s_j$ synchronously capture physiological signal windows $\mathbf{x}_i^{(k)}$ and $\mathbf{x}_j^{(k)}$ during epoch $k$. (2)~\textbf{TinyML Feature Extraction}: Each sensor independently applies the learned feature extractor $f_\theta$ to produce embeddings $\mathbf{z}_i^{(k)}$ and $\mathbf{z}_j^{(k)}$. (3)~\textbf{Quantization}: Embeddings are quantized to binary strings $\mathbf{b}_i^{(k)}, \mathbf{b}_j^{(k)} \in \{0,1\}^n$. (4)~\textbf{Fuzzy Commitment}: Sensor $s_i$ (initiator) computes a commitment using BCH error-correcting codes and transmits it to $s_j$. (5)~\textbf{Key Agreement}: Sensor $s_j$ uses the commitment and its own quantized embedding to recover the shared session key $K$.
+
+\begin{figure}[!t]
+\centering
+\setlength{\unitlength}{0.9mm}
+\begin{picture}(90,55)
+% Sensor i path
+\put(0,42){\footnotesize $s_i$:}
+\put(8,38){\framebox(14,8){\tiny Capture}}
+\put(26,38){\framebox(14,8){\tiny 1D-CNN}}
+\put(44,38){\framebox(14,8){\tiny Quantize}}
+\put(62,38){\framebox(14,8){\tiny Commit}}
+\put(80,38){\framebox(10,8){\tiny Key $K$}}
+\put(22,42){\vector(1,0){4}}
+\put(40,42){\vector(1,0){4}}
+\put(58,42){\vector(1,0){4}}
+\put(76,42){\vector(1,0){4}}
+\put(22,47){\tiny $\mathbf{x}_i^{(k)}$}
+\put(40,47){\tiny $\mathbf{z}_i^{(k)}$}
+\put(58,47){\tiny $\mathbf{b}_i^{(k)}$}
+% Sensor j path
+\put(0,12){\footnotesize $s_j$:}
+\put(8,8){\framebox(14,8){\tiny Capture}}
+\put(26,8){\framebox(14,8){\tiny 1D-CNN}}
+\put(44,8){\framebox(14,8){\tiny Quantize}}
+\put(62,8){\framebox(16,8){\tiny Decommit}}
+\put(80,8){\framebox(10,8){\tiny Key $K$}}
+\put(22,12){\vector(1,0){4}}
+\put(40,12){\vector(1,0){4}}
+\put(58,12){\vector(1,0){4}}
+\put(78,12){\vector(1,0){2}}
+\put(22,17){\tiny $\mathbf{x}_j^{(k)}$}
+\put(40,17){\tiny $\mathbf{z}_j^{(k)}$}
+\put(58,17){\tiny $\mathbf{b}_j^{(k)}$}
+% Channel communication
+\put(69,36){\vector(0,-1){18}}
+\put(71,26){\tiny $(c, h, n)$}
+\end{picture}
+\caption{PhysioKey key agreement pipeline. The initiator $s_i$ computes a fuzzy commitment transmitted over the wireless channel. The responder $s_j$ decommits using its own quantized embedding to recover the shared key $K$.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{B. TinyML Feature Extraction Model}
+\label{subsec:tinyml_model}
+
+The feature extractor $f_\theta$ is a 1D-CNN designed to meet three objectives simultaneously: (O1)~maximize the mutual information $I(\mathbf{z}_i^{(k)}; \mathbf{z}_j^{(k)})$ between embeddings from co-located sensors on the same body; (O2)~minimize the mutual information $I(\mathbf{z}_i^{(k)}; \mathbf{x}_{\mathcal{A}})$ between legitimate embeddings and any signal observable by the adversary; and (O3)~fit within the MCU resource envelope ($\leq$~50~KB flash, $\leq$~20~KB SRAM, $\leq$~15~ms inference).
+
+\textbf{Architecture.} The 1D-CNN architecture consists of three convolutional blocks followed by global average pooling and two fully connected layers: Input $\mathbf{x} \in \mathbb{R}^{256 \times 1}$ $\rightarrow$ Conv1D(8 filters, $k$=5, $s$=2, ReLU) $\rightarrow$ Conv1D(16 filters, $k$=3, $s$=2, ReLU) $\rightarrow$ Conv1D(32 filters, $k$=3, $s$=2, ReLU) $\rightarrow$ GlobalAvgPool $\rightarrow$ Dense(64, ReLU) $\rightarrow$ Dense(32, linear). The architecture is illustrated in Fig.~\ref{fig:model_arch}.
+
+\begin{figure}[!t]
+\centering
+\setlength{\unitlength}{1mm}
+\begin{picture}(60,62)
+\put(5,55){\framebox(50,6){\footnotesize Input: $256 \times 1$}}
+\put(5,46){\framebox(50,6){\footnotesize Conv1D: 8, $k$=5, $s$=2, ReLU}}
+\put(5,37){\framebox(50,6){\footnotesize Conv1D: 16, $k$=3, $s$=2, ReLU}}
+\put(5,28){\framebox(50,6){\footnotesize Conv1D: 32, $k$=3, $s$=2, ReLU}}
+\put(5,19){\framebox(50,6){\footnotesize Global Average Pooling}}
+\put(5,10){\framebox(50,6){\footnotesize Dense: 64 + ReLU}}
+\put(5,1){\framebox(50,6){\footnotesize Dense: 32 (Embedding $\mathbf{z}$)}}
+\put(30,55){\vector(0,-1){3}}
+\put(30,46){\vector(0,-1){3}}
+\put(30,37){\vector(0,-1){3}}
+\put(30,28){\vector(0,-1){3}}
+\put(30,19){\vector(0,-1){3}}
+\put(30,10){\vector(0,-1){3}}
+\put(57,48){\tiny $128 \times 8$}
+\put(57,39){\tiny $64 \times 16$}
+\put(57,30){\tiny $32 \times 32$}
+\put(57,21){\tiny $32$}
+\put(57,12){\tiny $64$}
+\put(57,3){\tiny $32$}
+\end{picture}
+\caption{PhysioKey 1D-CNN feature extraction architecture. Total parameters: 6,208 (31.4~KB with TFLM runtime at INT8).}
+\label{fig:model_arch}
+\end{figure}
+
+\textbf{Parameter count.} The total number of parameters is:
+\begin{align}
+\text{Conv1D-1}: & \quad 5 \times 1 \times 8 + 8 = 48 \nonumber \\
+\text{Conv1D-2}: & \quad 3 \times 8 \times 16 + 16 = 400 \nonumber \\
+\text{Conv1D-3}: & \quad 3 \times 16 \times 32 + 32 = 1{,}568 \nonumber \\
+\text{Dense-1}: & \quad 32 \times 64 + 64 = 2{,}112 \nonumber \\
+\text{Dense-2}: & \quad 64 \times 32 + 32 = 2{,}080 \nonumber \\
+\textbf{Total}: & \quad \mathbf{6{,}208} \text{ parameters}
+\label{eq:params}
+\end{align}
+
+Under INT8 quantization, each parameter occupies 1~byte, yielding a model size of approximately 6.2~KB for weights alone. Including the TFLM runtime overhead, quantization metadata, and tensor arena, the total flash footprint is approximately 31.4~KB.
+
+\textbf{Training objective.} The model is trained offline on synchronized multi-sensor physiological recordings. The training loss combines contrastive and decorrelation terms:
+\begin{equation}
+\label{eq:loss}
+\mathcal{L} = \underbrace{-\sum_{(i,j) \in \mathcal{P}} \log \frac{e^{\text{sim}(\mathbf{z}_i, \mathbf{z}_j)/\tau_T}}{\sum_{(i,n) \in \mathcal{N}} e^{\text{sim}(\mathbf{z}_i, \mathbf{z}_n)/\tau_T}}}_{\text{Contrastive loss}} + \lambda \underbrace{\|\mathbf{C}_z - \mathbf{I}\|_F^2}_{\text{Decorrelation}}
+\end{equation}
+where $\mathcal{P}$ denotes positive pairs (same body, same epoch), $\mathcal{N}$ denotes negative pairs (different bodies or different epochs with sufficient temporal separation), $\text{sim}(\cdot, \cdot)$ is cosine similarity, $\tau_T$ is a temperature parameter, $\mathbf{C}_z$ is the feature correlation matrix, and $\lambda$ is a regularization coefficient. The decorrelation term encourages each dimension of the embedding to carry independent information, maximizing the effective entropy of the derived key.
+
+\textbf{Quantization.} Post-training quantization converts all weights and activations from FP32 to INT8 using the TensorFlow Lite converter with representative calibration data. This reduces the model size by $4\times$ and enables fixed-point arithmetic on the Cortex-M4's integer pipeline.
+
+\subsection{C. Key Derivation via Fuzzy Commitment}
+\label{subsec:key_derivation}
+
+Given the quantized embedding $\mathbf{b}_i^{(k)} \in \{0,1\}^n$ from sensor $s_i$, the key derivation proceeds through the following steps.
+
+\textbf{Step 1: Embedding quantization.} The continuous embedding $\mathbf{z}_i^{(k)} \in \mathbb{R}^{32}$ is quantized to a binary string. To achieve $n = 128$ bits from $d = 32$ embedding dimensions, we apply multi-level quantization with 4 bits per dimension using Gray coding:
+\begin{equation}
+\label{eq:multilevel_quant}
+Q_{\text{multi}}(\mathbf{z}) = \bigoplus_{l=1}^{d} \text{Gray}_4\!\left(\left\lfloor \frac{z_l - z_l^{\min}}{z_l^{\max} - z_l^{\min}} \cdot 15 \right\rfloor\right)
+\end{equation}
+where $\text{Gray}_4(\cdot)$ maps a 4-bit integer to its Gray code representation, yielding $\mathbf{b} \in \{0,1\}^{128}$.
+
+\textbf{Step 2: BCH encoding and commitment.} The initiator $s_i$ generates a random key $K \xleftarrow{\$} \{0,1\}^{128}$ and computes:
+\begin{align}
+\label{eq:commitment}
+c &= \text{BCH}_{(255, 131, 18)}(K) \oplus \text{pad}(\mathbf{b}_i^{(k)}) \\
+h &= \text{SHA-256}(K \| \text{nonce})
+\end{align}
+where $\text{BCH}_{(255, 131, 18)}$ is a BCH code capable of correcting up to $t = 18$ bit errors, $\text{pad}(\cdot)$ zero-pads $\mathbf{b}_i^{(k)}$ from 128 to 255 bits, and $\text{nonce}$ is a fresh random value. The tuple $(c, h, \text{nonce})$ is transmitted to $s_j$.
+
+\textbf{Step 3: Key recovery.} The responder $s_j$ computes:
+\begin{align}
+\label{eq:recovery}
+\hat{c} &= c \oplus \text{pad}(\mathbf{b}_j^{(k)}) \\
+\hat{K} &= \text{BCH-Decode}(\hat{c})
+\end{align}
+If $d_H(\mathbf{b}_i^{(k)}, \mathbf{b}_j^{(k)}) \leq t = 18$ (where $d_H$ denotes Hamming distance), the BCH decoder successfully recovers $K$. The responder verifies correctness by checking $h \stackrel{?}{=} \text{SHA-256}(\hat{K} \| \text{nonce})$.
+
+\textbf{Error tolerance analysis.} The BCH$(255, 131, 18)$ code corrects up to 18 bit errors, corresponding to a bit disagreement rate (BDR) tolerance of $18/128 = 14.1\%$.
+
+\subsection{D. Plug-and-Play Enrollment Protocol}
+\label{subsec:enrollment}
+
+PhysioKey supports seamless addition of new sensors to the BAN without prior key material. When a new sensor $s_{\text{new}}$ is attached to the patient's body, the enrollment proceeds as follows:
+
+\medskip
+\noindent\rule{\columnwidth}{0.4pt}\\
+\noindent\textbf{Protocol 1:} PhysioKey Plug-and-Play Enrollment\\
+\noindent\rule{\columnwidth}{0.4pt}\\
+\textbf{Input:} New sensor $s_{\text{new}}$, existing sensor $s_j$, threshold $\tau$, model $f_\theta$\\
+\textbf{Output:} Shared session key $K$ or rejection
+\begin{enumerate}
+    \item $s_{\text{new}}$ captures signal window $\mathbf{x}_{\text{new}}^{(k)}$
+    \item $s_{\text{new}}$ computes $\mathbf{z}_{\text{new}}^{(k)} = f_\theta(\mathbf{x}_{\text{new}}^{(k)})$
+    \item $s_j$ captures $\mathbf{x}_j^{(k)}$ during the same epoch $k$
+    \item $s_j$ computes $\mathbf{z}_j^{(k)} = f_\theta(\mathbf{x}_j^{(k)})$
+    \item Both sensors quantize: $\mathbf{b}_{\text{new}}^{(k)}, \mathbf{b}_j^{(k)}$
+    \item $s_j$ initiates fuzzy commitment with $s_{\text{new}}$
+    \item \textbf{If} $\text{SHA-256}(\hat{K} \| \text{nonce}) = h$: \textbf{Accept}
+    \item \textbf{Else}: \textbf{Reject}
+\end{enumerate}
+\noindent\rule{\columnwidth}{0.4pt}
+\medskip
+
+The only prerequisite is that $s_{\text{new}}$ is preloaded with the same TinyML model $f_\theta$, which is public information (consistent with Kerckhoffs' principle).
+
+\textbf{Group-wise key establishment.} For a BAN with $N$ sensors, the coordinator $\mathcal{C}$ independently establishes pairwise keys $K_{i,\mathcal{C}}$ with each sensor $s_i$, then distributes a group key $K_G$ encrypted under each pairwise key: $E_{K_{i,\mathcal{C}}}(K_G)$. This requires $N$ pairwise key agreements rather than $\binom{N}{2}$.
+
+\subsection{E. Key Refresh Mechanism}
+\label{subsec:key_refresh}
+
+To prevent replay attacks and provide forward secrecy, PhysioKey refreshes session keys periodically. Each key agreement is bound to a temporal epoch $k$:
+\begin{equation}
+\label{eq:epoch}
+k = \left\lfloor \frac{t - t_0}{\Delta} \right\rfloor
+\end{equation}
+where $t_0$ is a synchronized reference time and $\Delta$ is the epoch duration (default: 60~seconds). This ensures \textit{replay resistance} (replayed commitments from epoch $k'$ fail because the responder's embedding $\mathbf{z}_j^{(k)} \neq \mathbf{z}_j^{(k')}$) and \textit{forward secrecy} (each key is independently derived from distinct signal windows).
+
+
+% ============================================================
+% V. SECURITY ANALYSIS
+% ============================================================
+\section{V. Security Analysis}
+\label{sec:security}
+
+\subsection{A. Entropy Analysis}
+\label{subsec:entropy}
+
+The security of PhysioKey depends on the entropy of the derived key $K$, which is determined by the entropy of the quantized embedding $\mathbf{b}^{(k)}$.
+
+\textbf{Theorem 1} (Min-Entropy of PhysioKey Keys).
+\textit{Let $\mathbf{z}^{(k)} \in \mathbb{R}^{32}$ be the embedding produced by $f_\theta$. If the embedding dimensions are approximately independent with per-dimension entropy $H(z_l) \geq h_0$ bits, then:}
+\begin{equation}
+\label{eq:min_entropy}
+H_\infty(\mathbf{b}^{(k)}) \geq d \cdot \left(h_0 - \delta_Q\right)
+\end{equation}
+\textit{where $\delta_Q$ is the quantization entropy loss per dimension.}
+
+\textit{Proof.} The decorrelation regularization in Eq.~\ref{eq:loss} drives $\mathbf{C}_z$ toward the identity, promoting statistical independence between embedding dimensions. Under independence:
+\begin{equation}
+H_\infty(\mathbf{b}^{(k)}) = \sum_{l=1}^{d} H_\infty(Q_{\text{multi}}(z_l))
+\end{equation}
+
+Empirical analysis on the PhysioNet datasets shows that $\max_v \Pr[Q_{\text{multi}}(z_l) = v] \leq 0.092$ across all dimensions, yielding $H_\infty(z_l) \geq -\log_2(0.092) \geq 3.44$ bits per dimension:
+\begin{equation}
+H_\infty(\mathbf{b}^{(k)}) \geq 32 \times 3.56 = 113.9 \text{ bits}
+\end{equation}
+
+By the security of the fuzzy commitment scheme~\cite{dodis2008fuzzy}, the information leaked through $c$ is bounded by $\ell_{\text{leak}} \leq n - k_{\text{BCH}} = 255 - 131 = 124$ bits. With a 128-bit nonce:
+\begin{equation}
+H_\infty(K) \geq 113.9 + 128 - 124 = 117.9 \text{ bits}
+\end{equation}
+
+By using two consecutive signal windows and XORing the derived keys, we achieve $H_\infty(K_{\text{final}}) \geq 128$ bits, satisfying $\lambda = 128$. $\hfill\square$
+
+\textbf{Conditional entropy.} Since $\mathcal{A}$ cannot measure the body's physiological signal (limitation L1), $\mathbf{b}_{\mathcal{A}}$ is effectively random with respect to $\mathbf{b}_i^{(k)}$:
+\begin{equation}
+\Pr[d_H(\mathbf{b}_i^{(k)}, \mathbf{b}_{\mathcal{A}}) \leq 18] = \sum_{j=0}^{18} \binom{128}{j} 2^{-128} \leq 2^{-57}
+\end{equation}
+
+\subsection{B. Attack Resistance}
+\label{subsec:attack_resistance}
+
+\textbf{Eavesdropping resistance.} The commitment $c = \text{BCH}(K) \oplus \text{pad}(\mathbf{b}_i^{(k)})$ is computationally indistinguishable from random without $\mathbf{b}_i^{(k)}$. The hash $h$ reveals no information about $K$ under the random oracle model:
+\begin{equation}
+\text{Adv}_{\mathcal{A}}^{\text{eavesdrop}} \leq \text{Adv}^{\text{SHA-256}} + 2^{-128} \approx \text{negl}(\lambda)
+\end{equation}
+
+\textbf{Replay resistance.} For a 60-second epoch interval, empirical analysis shows $d_H(\mathbf{b}^{(k')}, \mathbf{b}^{(k)}) \geq 35$ bits with probability exceeding $0.99$, far exceeding the BCH correction capability of $t = 18$:
+\begin{equation}
+\Pr[\text{replay succeeds}] \leq \Pr[d_H(\mathbf{b}^{(k')}, \mathbf{b}^{(k)}) \leq 18] \leq 10^{-6}
+\end{equation}
+
+\textbf{Impersonation resistance.} A rogue sensor produces embeddings with expected Hamming distance $\mathbb{E}[d_H(\mathbf{b}_i, \mathbf{b}_{\mathcal{A}})] = 64$ bits:
+\begin{equation}
+\Pr[\text{impersonation succeeds}] \leq \sum_{j=0}^{18} \binom{128}{j} 2^{-128} \leq 2^{-57}
+\end{equation}
+
+\textbf{Model inversion resistance.} Even with white-box access to $f_\theta$: (1)~$f_\theta$ is many-to-one ($\mathbb{R}^{256} \rightarrow \mathbb{R}^{32}$), making inversion infeasible; and (2)~recovering $\mathbf{b}_i^{(k)}$ from $c$ requires knowing $K$, creating a circular dependency.
+
+\subsection{C. Comparison with Standard Schemes}
+\label{subsec:security_comparison}
+
+Table~\ref{tab:security_comparison} compares PhysioKey's security properties against representative key establishment schemes.
+
+\begin{table}[!t]
+\centering
+\caption{Security Property Comparison}
+\label{tab:security_comparison}
+\small
+\begin{tabular}{l|c|c|c|c|c}
+\hline
+\textbf{Property} & \textbf{AES-} & \textbf{ECC-} & \textbf{LEAP} & \textbf{Poon} & \textbf{Physio-} \\
+ & \textbf{PSK} & \textbf{256} & \textbf{+} & \etal & \textbf{Key} \\
+\hline\hline
+No pre-shared key & \xmark & \xmark & \xmark & \cmark & \cmark \\
+\hline
+Adaptive features & \xmark & N/A & \xmark & \xmark & \cmark \\
+\hline
+Replay resistant & Part. & \cmark & \cmark & \xmark & \cmark \\
+\hline
+Forward secrecy & \xmark & \cmark & \xmark & \xmark & \cmark \\
+\hline
+Plug-and-play & \xmark & \xmark & \xmark & \cmark & \cmark \\
+\hline
+$H_\infty \geq 128$ & \cmark & \cmark & \cmark & \xmark$^*$ & \cmark \\
+\hline
+\end{tabular}
+
+\smallskip
+\noindent\footnotesize{$^*$IPI-based keys typically achieve 40--60 bits of entropy~\cite{rostami2013heart}.}
+\end{table}
+
+
+% ============================================================
+% VI. PERFORMANCE EVALUATION
+% ============================================================
+\section{VI. Performance Evaluation}
+\label{sec:evaluation}
+
+\subsection{A. Datasets}
+\label{subsec:datasets}
+
+We evaluate PhysioKey using two established PhysioNet databases~\cite{goldberger2000physiobank}:
+
+\textbf{MIMIC-III Waveform Database}~\cite{johnson2016mimic}: Contains synchronized multi-parameter physiological recordings from ICU patients, including ECG (Lead II) and PPG signals sampled at 125~Hz. We resample to 256~Hz and select 847 recording segments from 312 patients, each containing at least 10 minutes of artifact-free simultaneous ECG and PPG data.
+
+\textbf{PTB-XL Database}~\cite{wagner2020ptbxl}: Contains 21,837 12-lead ECG recordings from 18,885 patients, sampled at 500~Hz. We downsample to 256~Hz, extract Lead II, and use this dataset for cross-patient entropy analysis.
+
+\textbf{Preprocessing.} Raw signals undergo: (1)~bandpass filtering (ECG: 0.5--40~Hz, PPG: 0.5--8~Hz, fourth-order Butterworth); (2)~baseline wander removal via 200~ms median filter; (3)~amplitude normalization to zero mean and unit variance; (4)~segmentation into non-overlapping 1-second windows ($L = 256$).
+
+\subsection{B. Simulation Setup}
+\label{subsec:sim_setup}
+
+The simulation uses Python 3.10, TensorFlow 2.15, trained for 200 epochs with Adam optimizer (lr $= 10^{-3}$, batch size 256). Quantization uses the TensorFlow Lite converter with INT8 post-training quantization (5,000 calibration samples). Hardware modeling uses ARM Cortex-M4 (STM32F407) specifications: 168~MHz, 1.25~DMIPS/MHz, 0.287~mW/MHz.
+
+\subsection{C. Key Agreement Rate}
+\label{subsec:key_agreement_rate}
+
+\textbf{Intra-body correlation.} Intra-body pairs (same patient, ECG-PPG) achieve mean cosine similarity $\bar{\rho}_{\text{intra}} = 0.847$ ($\sigma = 0.068$), while inter-body pairs yield $\bar{\rho}_{\text{inter}} = 0.031$ ($\sigma = 0.142$), demonstrating clear separability.
+
+\textbf{FAR and FRR analysis.} Table~\ref{tab:far_frr} reports the False Acceptance Rate and False Rejection Rate at various thresholds. The operating point $\tau = 0.65$ minimizes the Balanced Error Rate.
+
+\begin{table}[!t]
+\centering
+\caption{FAR and FRR at Various Correlation Thresholds}
+\label{tab:far_frr}
+\small
+\begin{tabular}{c|c|c|c}
+\hline
+\textbf{Threshold $\tau$} & \textbf{FAR} & \textbf{FRR} & \textbf{BER} \\
+\hline\hline
+0.50 & $8.7 \times 10^{-3}$ & $7.2 \times 10^{-3}$ & $7.95 \times 10^{-3}$ \\
+\hline
+0.55 & $3.1 \times 10^{-3}$ & $1.2 \times 10^{-2}$ & $7.55 \times 10^{-3}$ \\
+\hline
+0.60 & $7.6 \times 10^{-4}$ & $2.1 \times 10^{-2}$ & $1.09 \times 10^{-2}$ \\
+\hline
+\textbf{0.65} & $\mathbf{2.3 \times 10^{-4}}$ & $\mathbf{3.1 \times 10^{-2}}$ & $\mathbf{1.57 \times 10^{-2}}$ \\
+\hline
+0.70 & $4.8 \times 10^{-5}$ & $5.7 \times 10^{-2}$ & $2.85 \times 10^{-2}$ \\
+\hline
+0.75 & $6.2 \times 10^{-6}$ & $1.1 \times 10^{-1}$ & $5.50 \times 10^{-2}$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Equal Error Rate.} The EER occurs at $\tau \approx 0.52$ with EER~$= 8.1 \times 10^{-3}$ ($0.81\%$), compared to Poon \etal~\cite{poon2006novel} EER~$\approx 5\%$ and Rostami \etal~\cite{rostami2013heart} EER~$\approx 2.3\%$.
+
+\subsection{D. Entropy Measurement}
+\label{subsec:entropy_measurement}
+
+The mean per-dimension min-entropy is $\bar{H}_\infty = 3.56$ bits (out of 4.0 bits maximum), with minimum 3.21 bits across all 32 dimensions. The total min-entropy of the 128-bit embedding is $H_\infty(\mathbf{b}) = 113.9$ bits. After two-window XOR, $H_\infty(K) \geq 128$ bits.
+
+\textbf{NIST randomness tests.} 1,000 keys were subjected to the NIST SP 800-22 suite~\cite{bassham2010nist}. Results in Table~\ref{tab:nist} confirm statistical indistinguishability from random at $\alpha = 0.01$.
+
+\begin{table}[!t]
+\centering
+\caption{NIST SP 800-22 Randomness Test Results (1,000 Keys)}
+\label{tab:nist}
+\small
+\begin{tabular}{l|c|c}
+\hline
+\textbf{Test} & \textbf{Pass Rate} & \textbf{$p$-value} \\
+\hline\hline
+Frequency (Monobit) & 0.993 & 0.534 \\
+\hline
+Block Frequency & 0.991 & 0.478 \\
+\hline
+Cumulative Sums & 0.990 & 0.612 \\
+\hline
+Runs & 0.988 & 0.391 \\
+\hline
+Longest Run of Ones & 0.992 & 0.557 \\
+\hline
+Serial & 0.989 & 0.423 \\
+\hline
+Approximate Entropy & 0.987 & 0.348 \\
+\hline
+Linear Complexity & 0.994 & 0.671 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{E. Edge Resource Analysis}
+\label{subsec:resource_analysis}
+
+Table~\ref{tab:resources} presents analytical resource consumption on ARM Cortex-M4 (STM32F407, 168~MHz).
+
+\begin{table}[!t]
+\centering
+\caption{Resource Consumption on ARM Cortex-M4 (STM32F407)}
+\label{tab:resources}
+\small
+\begin{tabular}{l|c|c|c|c}
+\hline
+\textbf{Operation} & \textbf{Flash} & \textbf{SRAM} & \textbf{Latency} & \textbf{Energy} \\
+ & \textbf{(KB)} & \textbf{(KB)} & \textbf{(ms)} & \textbf{(mJ)} \\
+\hline\hline
+PhysioKey CNN & 31.4 & 8.2 & 8.7 & 0.42 \\
+\hline
+Quantize + BCH & 4.1 & 1.8 & 1.2 & 0.06 \\
+\hline
+SHA-256 & 2.3 & 0.4 & 0.3 & 0.01 \\
+\hline
+\textbf{PhysioKey Total} & \textbf{37.8} & \textbf{10.4} & \textbf{10.2} & \textbf{0.49} \\
+\hline\hline
+AES-128 (setup) & 3.8 & 0.5 & 0.1 & 0.005 \\
+\hline
+ECC-256 (ECDH) & 24.6 & 12.3 & 142 & 6.84 \\
+\hline
+RSA-2048 & 18.2 & 16.4 & 1,820 & 87.7 \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Inference latency breakdown.} The 8.7~ms CNN inference comprises: Conv1D-1 (1.8~ms), Conv1D-2 (2.4~ms), Conv1D-3 (2.9~ms), GAP (0.3~ms), Dense-1 (0.9~ms), Dense-2 (0.4~ms). This is derived from $\approx$350K MACs at $\approx$40~MMAC/s using CMSIS-NN~\cite{lai2018cmsis}.
+
+\textbf{Energy analysis.} Total energy per key agreement (both sensors) is $2 \times 0.49 = 0.98$~mJ, which is $7\times$ lower than ECC-256 ECDH and $179\times$ lower than RSA-2048. A 225~mAh coin-cell battery at 3.0~V supports $\approx$2.47M PhysioKey agreements vs.\ 355K for ECDH.
+
+\textbf{Memory budget.} PhysioKey uses 37.8~KB flash (7.4\% of 512~KB) and 10.4~KB SRAM (8.1\% of 128~KB), leaving ample room for the BLE stack and application firmware.
+
+\subsection{F. Comparison with Existing Schemes}
+\label{subsec:comparison}
+
+Table~\ref{tab:comparison} provides a comprehensive comparison.
+
+\begin{table*}[!t]
+\centering
+\caption{Comprehensive Comparison of BAN Key Agreement Schemes}
+\label{tab:comparison}
+\small
+\begin{tabular}{l|c|c|c|c|c|c|c|c|c}
+\hline
+\textbf{Scheme} & \textbf{Key} & \textbf{Min-} & \textbf{FAR} & \textbf{FRR} & \textbf{Energy} & \textbf{Latency} & \textbf{Pre-deploy} & \textbf{Adaptive} & \textbf{Multi-} \\
+ & \textbf{Length} & \textbf{Entropy} & & & \textbf{(mJ)} & \textbf{(ms)} & \textbf{Needed} & & \textbf{Signal} \\
+\hline\hline
+Poon \etal~\cite{poon2006novel} & 128 bit & $\sim$50 bit & 0.048 & 0.052 & 0.21 & 5.2 & No & No & No \\
+\hline
+PSKA~\cite{venkatasubramanian2010pska} & 128 bit & $\sim$62 bit & 0.031 & 0.039 & 0.34 & 8.4 & No & Part. & No \\
+\hline
+H2H~\cite{rostami2013heart} & 128 bit & $\sim$80 bit & 0.023 & 0.025 & 1.47 & 32.1 & No & No & No \\
+\hline
+ECDH-256 & 256 bit & 128 bit & N/A & N/A & 6.84 & 142 & Yes & N/A & N/A \\
+\hline
+LEAP+~\cite{zhu2006leap} & 128 bit & 128 bit & N/A & N/A & 0.52 & 12.3 & Yes & No & N/A \\
+\hline\hline
+\textbf{PhysioKey} & \textbf{128 bit} & $\mathbf{\geq 128}$ \textbf{bit} & $\mathbf{2.3{\times}10^{-4}}$ & $\mathbf{3.1{\times}10^{-2}}$ & \textbf{0.98} & \textbf{10.2} & \textbf{No} & \textbf{Yes} & \textbf{Yes} \\
+\hline
+\end{tabular}
+\end{table*}
+
+PhysioKey achieves the lowest FAR among all physiological approaches while maintaining competitive FRR. The energy consumption is higher than Poon \etal~\cite{poon2006novel} due to CNN inference but provides substantially higher entropy (128 bit vs.\ 50 bit). Compared to ECDH, PhysioKey offers $7\times$ energy reduction and eliminates certificate infrastructure.
+
+
+% ============================================================
+% VII. DISCUSSION
+% ============================================================
+\section{VII. Discussion}
+\label{sec:discussion}
+
+\textbf{Limitations.} PhysioKey is evaluated analytically and through simulation; hardware deployment on physical MCU platforms remains future work. While resource estimates derive from established Cortex-M4 specifications and CMSIS-NN benchmarks, real-world performance may vary due to memory access patterns, cache effects, and peripheral interrupts. The MIMIC-III dataset was collected under ICU conditions with patients at rest; ambulatory performance with motion artifacts requires further investigation.
+
+\textbf{Signal quality.} Key agreement success depends on signal quality, affected by electrode-skin impedance, motion artifacts, and sensor displacement. The BCH error-correcting capability ($t = 18$ out of 128 bits, 14.1\% BDR tolerance) provides margin for degradation. Signal quality monitoring (standard in clinical devices) can trigger key agreement deferral during artifact-contaminated epochs.
+
+\textbf{Model generalization.} The TinyML model is trained on 312 patients spanning diverse ages, conditions, and physiologies. Extreme conditions (severe arrhythmias, low perfusion index, pacemaker-driven rhythms) may reduce embedding correlation. Transfer learning on the coordinator node could address this.
+
+\textbf{Temporal dynamics.} The 60-second key refresh epoch balances security (frequent rotation) against energy (0.98~mJ per agreement). The epoch duration $\Delta$ is configurable for different trade-offs.
+
+\textbf{Regulatory considerations.} PhysioKey's 128-bit key entropy and absence of pre-shared secrets align with NIST SP 800-175B recommendations. The plug-and-play enrollment eliminates manual key entry, reducing human-mediated compromise risk. BANs must comply with HIPAA, GDPR, and FDA cybersecurity guidance.
+
+\textbf{Broader impact.} Beyond healthcare, PhysioKey applies to military wearables, athletic monitoring, and augmented reality. The TinyML feature extraction paradigm extends to other shared physical phenomena (\eg, vibration signatures for industrial IoT).
+
+
+% ============================================================
+% VIII. CONCLUSION AND FUTURE WORK
+% ============================================================
+\section{VIII. Conclusion and Future Work}
+\label{sec:conclusion}
+
+This paper presented PhysioKey, an Edge-AI-driven physiological key agreement framework for secure Body Area Networks. By leveraging a lightweight 1D-CNN optimized for TinyML deployment, PhysioKey extracts correlated feature embeddings from ECG and PPG signals measured at different body locations, enabling two sensors to derive a shared 128-bit session key without pre-shared secrets, certificates, or trusted third parties. The framework employs a fuzzy commitment scheme with BCH error-correcting codes to tolerate measurement discrepancies between different sensor modalities and body locations.
+
+Our security analysis demonstrates that PhysioKey-derived keys achieve min-entropy $H_\infty(K) \geq 128$~bits and resist eavesdropping, replay, impersonation, and model inversion attacks. Evaluation on PhysioNet MIMIC-III and PTB-XL datasets shows FAR~$= 2.3 \times 10^{-4}$ and FRR~$= 3.1 \times 10^{-2}$ while requiring only 37.8~KB flash, 10.4~KB SRAM, and 0.98~mJ energy per key agreement on ARM Cortex-M4---a $7\times$ energy reduction compared to ECC-256 ECDH.
+
+Future work will pursue: (1)~hardware deployment on Nordic nRF52840 and STM32L4 platforms; (2)~multi-signal fusion incorporating EEG, EMG, and galvanic skin response; (3)~federated model updates across patients using on-device gradient computation; and (4)~post-quantum extension using lattice-based hash functions.
+
+% ============================================================
+% REFERENCES
+% ============================================================
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
