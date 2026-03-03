@@ -598,6 +598,72 @@ def run_nist_tests(keys, n_keys=1000):
     return results
 
 
+# ============================================================
+# BCH CODE PARAMETER TABLES (real codes over GF(2^m))
+# ============================================================
+# BCH(n, k, d) where n = 2^m - 1, t = floor((d-1)/2) errors corrected
+BCH_CODES = {
+    31: [  # GF(2^5), n=31
+        {'t': 1, 'k': 26, 'd': 3},
+        {'t': 2, 'k': 21, 'd': 5},
+        {'t': 3, 'k': 16, 'd': 7},
+        {'t': 5, 'k': 11, 'd': 11},
+        {'t': 7, 'k': 6, 'd': 15},
+    ],
+    63: [  # GF(2^6), n=63
+        {'t': 1, 'k': 57, 'd': 3},
+        {'t': 2, 'k': 51, 'd': 5},
+        {'t': 3, 'k': 45, 'd': 7},
+        {'t': 4, 'k': 39, 'd': 9},
+        {'t': 5, 'k': 36, 'd': 11},
+        {'t': 6, 'k': 30, 'd': 13},
+        {'t': 7, 'k': 24, 'd': 15},
+        {'t': 10, 'k': 18, 'd': 21},
+        {'t': 11, 'k': 16, 'd': 23},
+        {'t': 13, 'k': 10, 'd': 27},
+        {'t': 15, 'k': 7, 'd': 31},
+    ],
+    127: [  # GF(2^7), n=127
+        {'t': 1, 'k': 120, 'd': 3},
+        {'t': 2, 'k': 113, 'd': 5},
+        {'t': 3, 'k': 106, 'd': 7},
+        {'t': 5, 'k': 92, 'd': 11},
+        {'t': 7, 'k': 78, 'd': 15},
+        {'t': 10, 'k': 64, 'd': 21},
+        {'t': 13, 'k': 50, 'd': 27},
+        {'t': 15, 'k': 43, 'd': 31},
+        {'t': 21, 'k': 29, 'd': 43},
+        {'t': 23, 'k': 22, 'd': 47},
+        {'t': 27, 'k': 15, 'd': 55},
+        {'t': 31, 'k': 8, 'd': 63},
+    ],
+}
+
+
+def get_bch_block_length(n_bits):
+    """Find the smallest BCH block length >= n_bits."""
+    for n in sorted(BCH_CODES.keys()):
+        if n >= n_bits:
+            return n
+    return max(BCH_CODES.keys())
+
+
+def majority_vote_bdr(per_bit_bdr, n_rounds):
+    """Compute BDR after majority voting over n_rounds (must be odd).
+
+    For each bit position, take majority across R rounds.
+    New BDR = P(majority of R Bernoulli(p) trials are 1).
+    """
+    from scipy.special import comb
+    p = per_bit_bdr
+    # P(majority wrong) = sum_{k=ceil(R/2)}^{R} C(R,k) * p^k * (1-p)^(R-k)
+    threshold = n_rounds // 2 + 1
+    bdr_new = 0.0
+    for k in range(threshold, n_rounds + 1):
+        bdr_new += comb(n_rounds, k, exact=True) * (p ** k) * ((1 - p) ** (n_rounds - k))
+    return bdr_new
+
+
 def estimate_cortex_m4_performance(model):
     """Analytical resource estimates for ARM Cortex-M4."""
     n_params = model.count_parameters()
@@ -707,6 +773,11 @@ def main():
 
     history = train_model(model, train_loader, CONFIG)
 
+    # Save model for reproducibility
+    model_path = os.path.join(CONFIG['results_dir'], 'physiokey_model.pt')
+    torch.save(model.state_dict(), model_path)
+    print(f"  Model saved to {model_path}")
+
     # --- Step 4: Extract embeddings on test set ---
     print("\n[4/6] Extracting test embeddings...")
     model.eval()
@@ -727,6 +798,11 @@ def main():
         z2_all = np.concatenate(z2_list, axis=0)
 
     print(f"  Embeddings shape: {z1_all.shape}")
+
+    # Save embeddings for reproducibility
+    embed_path = os.path.join(CONFIG['results_dir'], 'embeddings.npz')
+    np.savez(embed_path, z1=z1_all, z2=z2_all, patient_ids=test_pids)
+    print(f"  Embeddings saved to {embed_path}")
 
     # --- Step 5: Compute metrics ---
     print("\n[5/6] Computing metrics...")
@@ -847,23 +923,50 @@ def main():
         print(f"  Replay failure rate: {replay_fail_rate:.4f}")
 
     # 5g. NIST randomness tests
+    # NIST SP 800-22 requires minimum 100 bits per sequence.
+    # Individual keys are only 64 bits, so we concatenate multiple keys
+    # from different patients to form longer sequences for meaningful testing.
     print("\n  Running NIST randomness tests...")
-    # Generate keys by XORing quantized embeddings with random
-    keys = []
-    for i in range(min(1000, len(bits_s1))):
-        # Simulate key: XOR of sensor bits (as would happen in fuzzy commitment)
-        key = bits_s1[i].copy()
-        keys.append(key)
+    print("    (Concatenating keys to reach NIST minimum sequence length)")
 
-    nist_results = run_nist_tests(keys)
-    for test_name, result in nist_results.items():
-        print(f"    {test_name}: pass_rate={result['pass_rate']:.3f}, "
+    # Approach 1: per-key tests (note: below NIST minimum, reported for transparency)
+    keys_short = []
+    for i in range(min(1000, len(bits_s1))):
+        keys_short.append(bits_s1[i].copy())
+
+    nist_results_short = run_nist_tests(keys_short)
+    print("    Per-key results (64-bit sequences — below NIST minimum of 100 bits):")
+    for test_name, result in nist_results_short.items():
+        print(f"      {test_name}: pass_rate={result['pass_rate']:.3f}, "
               f"mean_p={result['mean_p_value']:.4f}")
 
-    # 5h. Key agreement sweep: different quantization levels and ECC strengths
-    print("\n  Key agreement parameter sweep...")
+    # Approach 2: concatenated sequences (>= 1000 bits each)
+    concat_len = 1024  # bits per test sequence
+    keys_per_seq = concat_len // CONFIG['n_bits']
+    n_sequences = min(100, len(bits_s1) // keys_per_seq)
+    keys_long = []
+    for i in range(n_sequences):
+        start = i * keys_per_seq
+        seq = np.concatenate([bits_s1[start + j] for j in range(keys_per_seq)])
+        keys_long.append(seq)
+
+    nist_results_long = run_nist_tests(keys_long) if keys_long else {}
+    print(f"    Concatenated results ({concat_len}-bit sequences, {n_sequences} sequences):")
+    for test_name, result in nist_results_long.items():
+        print(f"      {test_name}: pass_rate={result['pass_rate']:.3f}, "
+              f"mean_p={result['mean_p_value']:.4f}")
+
+    nist_results = {
+        'per_key_64bit': nist_results_short,
+        'concatenated_1024bit': nist_results_long,
+        'note': 'Per-key tests use 64-bit sequences (below NIST SP 800-22 minimum of 100 bits). '
+                'Concatenated tests use 1024-bit sequences formed from 16 consecutive keys.',
+    }
+
+    # 5h. Key agreement sweep with REAL BCH parameters
+    print("\n  Key agreement parameter sweep (real BCH codes)...")
     sweep_results = []
-    for bpd in [1, 2, 3]:
+    for bpd in [1, 2]:
         n_key_bits = 32 * bpd
         bits_sweep, bounds_sweep = quantize_embedding(all_z, n_bits_per_dim=bpd)
         bits_s1_sweep, _ = quantize_embedding(z1_all, n_bits_per_dim=bpd, boundaries=bounds_sweep)
@@ -871,20 +974,109 @@ def main():
         hd_sweep = hamming_distance(bits_s1_sweep, bits_s2_sweep)
         bdr_sweep = hd_sweep / n_key_bits
 
-        for t_val in [5, 10, 15, 20, 25]:
-            if t_val > n_key_bits // 2:
-                continue
+        # Find the real BCH block length for this bit count
+        bch_n = get_bch_block_length(n_key_bits)
+        bch_codes = BCH_CODES.get(bch_n, [])
+
+        print(f"\n    {bpd}b/dim, {n_key_bits} raw bits -> BCH({bch_n},...)")
+        print(f"    BDR: mean={bdr_sweep.mean():.3f}, std={bdr_sweep.std():.3f}")
+
+        for code in bch_codes:
+            t_val = code['t']
+            k_val = code['k']
+            d_val = code['d']
+            # Pad to BCH block length and check HD
             success = float(np.mean(hd_sweep <= t_val))
             sweep_results.append({
                 'bits_per_dim': bpd,
                 'total_bits': n_key_bits,
+                'bch_n': bch_n,
+                'bch_k': k_val,
                 'bch_t': t_val,
-                'effective_key_bits': max(n_key_bits - t_val * int(np.ceil(np.log2(n_key_bits + 1))), 1),
+                'bch_d': d_val,
+                'effective_key_bits': k_val,
                 'bdr_mean': float(bdr_sweep.mean()),
+                'bdr_std': float(bdr_sweep.std()),
                 'ka_success_rate': success,
             })
-            print(f"    {bpd}b/dim, {n_key_bits} bits, BCH t={t_val}: "
-                  f"BDR={bdr_sweep.mean():.3f}, success={success:.3f}")
+            print(f"      BCH({bch_n},{k_val},{d_val}), t={t_val}: "
+                  f"success={success:.3f}, eff_key={k_val} bits")
+
+    # 5i. Multi-round majority voting analysis
+    print("\n  Multi-round majority voting analysis...")
+    multiround_results = []
+    for bpd in [1, 2]:
+        n_key_bits = 32 * bpd
+        bits_sweep, bounds_sweep = quantize_embedding(all_z, n_bits_per_dim=bpd)
+        bdr_single = None
+
+        for n_rounds in [1, 3, 5, 7]:
+            # Compute actual multi-round BDR from data
+            mr_hd_list = []
+            mr_total = 0
+            for pid in unique_test_pids:
+                idx = np.where(test_pids == pid)[0]
+                if len(idx) >= n_rounds:
+                    for start in range(0, len(idx) - n_rounds + 1, n_rounds):
+                        sel = idx[start:start + n_rounds]
+                        rounds_s1, _ = quantize_embedding(
+                            z1_all[sel], n_bits_per_dim=bpd, boundaries=bounds_sweep)
+                        rounds_s2, _ = quantize_embedding(
+                            z2_all[sel], n_bits_per_dim=bpd, boundaries=bounds_sweep)
+                        if n_rounds == 1:
+                            voted_s1 = rounds_s1[0]
+                            voted_s2 = rounds_s2[0]
+                        else:
+                            voted_s1 = (rounds_s1.sum(axis=0) > n_rounds / 2).astype(np.uint8)
+                            voted_s2 = (rounds_s2.sum(axis=0) > n_rounds / 2).astype(np.uint8)
+                        hd = np.sum(voted_s1 != voted_s2)
+                        mr_hd_list.append(hd)
+                        mr_total += 1
+
+            if not mr_hd_list:
+                continue
+
+            mr_hd_arr = np.array(mr_hd_list)
+            mr_bdr = mr_hd_arr / n_key_bits
+
+            if n_rounds == 1:
+                bdr_single = float(mr_bdr.mean())
+
+            # Theoretical BDR for comparison
+            if bdr_single is not None and n_rounds > 1:
+                theoretical_bdr = majority_vote_bdr(bdr_single, n_rounds)
+            else:
+                theoretical_bdr = float(mr_bdr.mean())
+
+            bch_n = get_bch_block_length(n_key_bits)
+            bch_codes = BCH_CODES.get(bch_n, [])
+
+            print(f"\n    {bpd}b/dim, R={n_rounds}: "
+                  f"actual_BDR={mr_bdr.mean():.3f}, "
+                  f"theoretical_BDR={theoretical_bdr:.3f}, "
+                  f"n_pairs={mr_total}")
+
+            for code in bch_codes:
+                t_val = code['t']
+                k_val = code['k']
+                success = float(np.mean(mr_hd_arr <= t_val))
+                entry = {
+                    'bits_per_dim': bpd,
+                    'total_bits': n_key_bits,
+                    'n_rounds': n_rounds,
+                    'bch_n': bch_n,
+                    'bch_k': k_val,
+                    'bch_t': t_val,
+                    'effective_key_bits': k_val,
+                    'actual_bdr': float(mr_bdr.mean()),
+                    'theoretical_bdr': theoretical_bdr,
+                    'ka_success_rate': success,
+                    'n_pairs': mr_total,
+                }
+                multiround_results.append(entry)
+                if success > 0.01:  # Only print non-trivial results
+                    print(f"      BCH({bch_n},{k_val},...) t={t_val}: "
+                          f"success={success:.3f}, eff_key={k_val}b")
 
     # --- Step 6: Resource estimates ---
     print("\n[6/6] Computing resource estimates...")
@@ -943,6 +1135,7 @@ def main():
             'epochs': CONFIG['epochs'],
         },
         'key_agreement_sweep': sweep_results,
+        'multiround_voting': multiround_results,
     }
 
     results_path = os.path.join(CONFIG['results_dir'], 'simulation_results.json')
@@ -967,11 +1160,24 @@ def main():
     print(f"  FRR = {best['FRR']:.2e}")
 
     print(f"Total min-entropy: {total_min_entropy:.1f} bits")
-    print(f"Key agreement success rate: {ka_success*100:.1f}%")
     print(f"Model parameters: {hw_results['n_params']}")
     print(f"Model flash: {hw_results['total_flash_kb']:.1f} KB")
     print(f"Inference latency: {hw_results['inference_ms']:.1f} ms")
     print(f"Energy per agreement: {hw_results['energy_both_sensors_mj']:.2f} mJ")
+
+    # Print best multi-round results
+    if multiround_results:
+        print("\nBest multi-round key agreement results:")
+        best_by_config = {}
+        for r in multiround_results:
+            key = (r['bits_per_dim'], r['n_rounds'])
+            if key not in best_by_config or r['ka_success_rate'] > best_by_config[key]['ka_success_rate']:
+                best_by_config[key] = r
+        for (bpd, nr), r in sorted(best_by_config.items()):
+            if r['ka_success_rate'] > 0.1:
+                print(f"  {bpd}b/dim, R={nr}: {r['ka_success_rate']*100:.1f}% "
+                      f"(BCH t={r['bch_t']}, eff_key={r['effective_key_bits']}b, "
+                      f"BDR={r['actual_bdr']:.3f})")
 
 
 if __name__ == '__main__':

@@ -87,7 +87,7 @@ The training objective has three components:
 
 When quantizing continuous embedding values to bits, adjacent quantization levels should differ by only 1 bit (not multiple bits). Gray coding ensures that a small analog error (value near a boundary) causes at most 1 bit flip, minimizing the Hamming distance between slightly different embeddings.
 
-### 3.6 BCH Parameter Trade-off
+### 3.6 BCH Parameter Trade-off (Corrected with Real BCH Codes)
 
 The core engineering trade-off:
 
@@ -99,15 +99,23 @@ Lower quantization (fewer bits/dim) -> Lower BDR (fewer disagreements)
                                      -> But less entropy per key
 ```
 
-Our simulation found the sweet spot:
+**Critical correction:** Standard BCH codes have block lengths n = 2^m - 1. The 32 raw bits from 1-bit quantization must be zero-padded to 63 bits (BCH(63,...)), and 64 raw bits from 2-bit quantization must be padded to 127 bits (BCH(127,...)). Earlier versions of this work incorrectly claimed BCH(31,16,7) which only corrects t=3 errors.
 
-| Config | BDR | Success | Effective Key |
-|--------|-----|---------|---------------|
-| 1 bit/dim, t=15 | 28.2% | **94.5%** | ~17 bits (expanded via SHA-256) |
-| 2 bit/dim, t=25 | 33.2% | 73.1% | ~39 bits (expanded via SHA-256) |
-| 2 bit/dim, t=10 | 33.2% | 5.8% | ~44 bits (too few corrections) |
+Simulation results with **real BCH codes**:
 
-**Decision:** Present both configurations. The 1-bit config (94.5% success) is practical; the 2-bit config (73.1%) offers higher entropy. Both use SHA-256 key derivation to produce 128-bit session keys.
+| Config | BCH Code | t | BDR | Success | Effective Key |
+|--------|----------|---|-----|---------|---------------|
+| 1 bit/dim | BCH(63,24,15) | 7 | 29.2% | 33.8% | 24 bits |
+| 1 bit/dim | BCH(63,18,21) | 10 | 29.2% | 62.8% | 18 bits |
+| 1 bit/dim | BCH(63,16,23) | 11 | 29.2% | **73.2%** | **16 bits** |
+| 1 bit/dim | BCH(63,10,27) | 13 | 29.2% | 86.1% | 10 bits |
+| 1 bit/dim | BCH(63,7,31) | 15 | 29.2% | 93.6% | 7 bits |
+| 2 bit/dim | BCH(127,29,43) | 21 | 34.0% | 48.9% | 29 bits |
+| 2 bit/dim | BCH(127,22,47) | 23 | 34.0% | 59.9% | 22 bits |
+| 2 bit/dim | BCH(127,15,55) | 27 | 34.0% | **80.4%** | **15 bits** |
+| 2 bit/dim | BCH(127,8,63) | 31 | 34.0% | 92.4% | 8 bits |
+
+**Decision:** Present the full trade-off space. Best balanced operating points are BCH(63,16,23) with 73.2% success / 16-bit key and BCH(127,15,55) with 80.4% success / 15-bit key. All use SHA-256 key derivation for computational security, but the information-theoretic security is bounded by the effective key bits (7-24 bits). This limitation is discussed honestly in the paper.
 
 ---
 
@@ -177,34 +185,37 @@ Raw 500 Hz signal
 
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| Intra-body cosine similarity | 0.705 +/- 0.174 | Same-patient Lead I/II embeddings are well-aligned |
-| Inter-body cosine similarity | 0.232 +/- 0.232 | Different-patient embeddings are nearly orthogonal |
-| Separation | 0.473 | Clear gap enables discrimination |
-| ROC AUC | 0.945 | Strong classifier -- 94.5% of the time, a randomly chosen intra-body pair scores higher than a random inter-body pair |
-| EER | 12.7% | At the equal error point, 12.7% of pairs are misclassified |
+| Intra-body cosine similarity | 0.703 +/- 0.173 | Same-patient Lead I/II embeddings are well-aligned |
+| Inter-body cosine similarity | 0.241 +/- 0.228 | Different-patient embeddings are nearly orthogonal |
+| Separation | 0.462 | Clear gap enables discrimination |
+| ROC AUC | 0.943 | Strong classifier |
+| EER | 13.3% | At the equal error point, 13.3% of pairs are misclassified |
 
-**Why EER is 12.7% (not <5%):**
+**Why EER is 13.3% (not <5%):**
 - Lead I and Lead II have genuinely different morphologies (different cardiac electrical vectors)
 - Published ECG-PPG systems (Poon et al.) achieve 5% EER using *synchronized* ECG+PPG with temporal alignment
-- Our setup is harder because we compare two ECG leads without temporal alignment features
+- This setup is harder because it compares two ECG leads without temporal alignment
 - A real ECG+PPG deployment would likely perform better
 
-### 5.2 Key Agreement
+### 5.2 Key Agreement (Corrected with Real BCH Codes)
 
-The parameter sweep revealed that the quantization level and BCH correction capability are the primary knobs:
+The key finding is a fundamental trade-off between success rate and effective key length:
 
-- **1 bit/dim, BCH t=15: 94.5% success** -- practical operating point
-- **2 bit/dim, BCH t=25: 73.1% success** -- higher entropy alternative
-- **1 bit/dim, BCH t=10: 66.4% success** -- moderate correction
+- **BCH(63,16,23), t=11: 73.2% success, 16-bit effective key** -- best balanced point
+- **BCH(63,7,31), t=15: 93.6% success, 7-bit effective key** -- highest success
+- **BCH(127,15,55), t=27: 80.4% success, 15-bit effective key** -- 2-bit config balanced point
 
-The BDR of 28.2% (1-bit) means that on average, 9 out of 32 bits disagree between Lead I and Lead II embeddings from the same patient. With BCH t=15, up to 15 errors can be corrected, covering the vast majority of cases.
+The BDR of 29.2% (1-bit) means that on average, ~9 out of 32 bits disagree. With BCH(63,...) codes, the 32 bits are padded to 63, and the error correction capability t must handle these disagreements.
+
+**Honest assessment:** Effective key lengths of 7-24 bits are modest. SHA-256 stretching provides computational hardness but not information-theoretic security beyond the source entropy. Reducing BDR (through real ECG+PPG sensors) is the clearest path to stronger keys.
 
 ### 5.3 Security Properties
 
-- **Entropy**: Per-dimension min-entropy achieves theoretical maximum (2.0 bits for 2-bit quantization) due to percentile-based boundaries ensuring uniform bin occupancy
-- **NIST Tests**: 94.5-99.0% pass rates confirm statistical randomness
-- **Replay Resistance**: 99.2% of replayed (time-shifted) vectors exceed BCH correction capability, confirming temporal drift provides replay protection
-- **Impersonation**: Inter-body similarity of 0.232 means attackers' embeddings are far from legitimate values
+- **Entropy**: Per-dimension min-entropy is 2.0 bits for 2-bit quantization, but this is partly an artifact of percentile-based quantization boundaries forcing uniform bin occupancy. The entropy of the quantized representation is high by construction; the entropy of the underlying source signal may be lower.
+- **NIST Tests (concatenated 1024-bit)**: Monobit 77.4%, Runs 87.1%, Block Frequency 98.4% -- the Monobit result indicates some systematic bias in the bit sequences.
+- **NIST Tests (per-key 64-bit, below NIST minimum)**: Higher pass rates (93.4-99.4%) but statistically less reliable at this sequence length.
+- **Replay Resistance**: 99.2% of replayed (time-shifted) vectors exceed BCH correction capability.
+- **FAR as Security Concern**: The 12.9% FAR at the balanced operating point means roughly 1 in 8 adversary attempts produces similar-enough embeddings. This is a genuine security limitation that should be mitigated by combining PhysioKey with other authentication factors.
 
 ### 5.4 Hardware Feasibility
 
@@ -226,13 +237,19 @@ The BDR of 28.2% (1-bit) means that on average, 9 out of 32 bits disagree betwee
 
 2. **Lead I vs Lead II is a proxy**: Not a true ECG+PPG evaluation. Real ECG+PPG would likely perform better (higher correlation from hemodynamic proximity) or differently.
 
-3. **EER of 12.7%**: Higher than some published schemes. However, (a) our evaluation is more conservative (cross-lead), (b) EER is for the embedding similarity -- key agreement still achieves 94.5% success with appropriate BCH parameters.
+3. **EER of 13.3%**: Higher than some published schemes. The conservative cross-lead evaluation is partly responsible, but this remains a genuine limitation.
 
-4. **Key entropy**: The 1-bit config produces only 32 bits of agreed secret. While SHA-256 stretches this to 128-bit session keys, the computational security is bounded by the 32-bit underlying entropy. The 2-bit config (64 bits) is stronger but has 73.1% success rate.
+4. **Effective key entropy is modest**: With real BCH codes, the effective key lengths range from 7 to 24 bits (1-bit config) or 8 to 43 bits (2-bit config). The highest success rates (93.6%, 92.4%) correspond to the shortest keys (7-8 bits). SHA-256 stretching provides computational hardness but not information-theoretic security beyond these values. This is the most significant technical limitation.
 
-5. **500 patients**: Sufficient for proof-of-concept but a full evaluation should use the complete 18,885-patient PTB-XL dataset.
+5. **FAR is a security concern**: The 12.9% FAR at the balanced threshold means an adversary has roughly a 1-in-8 chance of producing similar-enough embeddings. PhysioKey should be combined with other authentication factors for high-security applications.
 
-6. **Single dataset**: Only PTB-XL evaluated. Cross-dataset validation (e.g., training on PTB-XL, testing on MIMIC-III) would strengthen generalizability claims.
+6. **NIST randomness tests show some bias**: The concatenated 1024-bit Monobit pass rate is only 77.4%, indicating systematic bias in bit sequences. Per-key tests at 64 bits are below the NIST minimum sequence length requirement.
+
+7. **No cross-validation**: Results are based on a single 200/100 train/test split. Performance may vary across splits.
+
+8. **500 patients**: Sufficient for proof-of-concept but a full evaluation should use the complete 18,885-patient PTB-XL dataset.
+
+9. **Single dataset**: Only PTB-XL evaluated. Cross-dataset validation would strengthen generalizability claims.
 
 ---
 
