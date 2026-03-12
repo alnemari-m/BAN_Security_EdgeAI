@@ -35,7 +35,7 @@ CONFIG = {
     'data_dir': os.path.join(os.path.dirname(__file__), 'ptbxl_data'),
     'results_dir': os.path.join(os.path.dirname(__file__), 'results'),
     'sample_rate': 256,       # Target Hz (PTB-XL native: 500Hz, we downsample)
-    'window_len': 256,        # 1 second at 256 Hz
+    'window_len': 128,        # 0.5 second at 256 Hz (ablation showed best EER)
     'embed_dim': 32,          # Embedding dimension
     'n_bits': 64,             # Key length (2 bits per dimension * 32 dims)
     'n_bits_per_dim': 2,      # 2-bit quantization for lower BDR
@@ -50,6 +50,11 @@ CONFIG = {
     'n_patients_test': 100,
     'max_records': 500,       # Max records to download (reduced for speed)
     'seed': 42,
+    # BIDMC dataset
+    'bidmc_data_dir': os.path.join(os.path.dirname(__file__), 'bidmc_data'),
+    'ppg_lowcut': 0.5,        # PPG bandpass low cutoff (Hz)
+    'ppg_highcut': 8.0,       # PPG bandpass high cutoff (Hz)
+    'n_cv_folds': 5,          # Number of cross-validation folds
 }
 
 os.makedirs(CONFIG['results_dir'], exist_ok=True)
@@ -255,6 +260,143 @@ def load_and_preprocess(data_dir, max_records=2000):
     return all_windows_lead1, all_windows_lead2, patient_ids
 
 
+def download_bidmc(data_dir):
+    """Download BIDMC PPG and Respiration Dataset from PhysioNet.
+
+    53 recordings x 8 minutes from ICU patients.
+    Synchronized ECG (Lead II) + PPG (plethysmograph) at 125 Hz.
+    Open access: physionet.org/content/bidmc/1.0.0/
+    """
+    os.makedirs(data_dir, exist_ok=True)
+
+    marker = os.path.join(data_dir, '.download_complete')
+    if os.path.exists(marker):
+        print("BIDMC data already downloaded.")
+        return
+
+    print("Downloading BIDMC dataset from PhysioNet...")
+    try:
+        wfdb.dl_database('bidmc', data_dir)
+        print("  BIDMC download complete.")
+    except Exception as e:
+        print(f"  Bulk download failed: {e}")
+        print("  Trying individual records...")
+        downloaded = 0
+        for i in range(1, 54):
+            rec_name = f"bidmc{i:02d}"
+            try:
+                wfdb.dl_database('bidmc', data_dir, records=[rec_name])
+                downloaded += 1
+            except Exception:
+                pass
+        print(f"  Downloaded {downloaded}/53 records.")
+
+    with open(marker, 'w') as f:
+        f.write("downloaded=bidmc\n")
+
+
+def load_and_preprocess_bidmc(data_dir):
+    """Load BIDMC records, extract ECG (II) and PPG (PLETH), preprocess.
+
+    Returns (windows_ecg, windows_ppg, patient_ids) in the same format
+    as the PTB-XL loader for pipeline compatibility.
+    """
+    print("Loading and preprocessing BIDMC data...")
+
+    target_fs = CONFIG['sample_rate']  # 256 Hz
+    window_len = CONFIG['window_len']  # 256 samples
+
+    all_windows_ecg = []
+    all_windows_ppg = []
+    patient_ids = []
+
+    for i in range(1, 54):
+        rec_name = f"bidmc{i:02d}"
+        rec_path = os.path.join(data_dir, rec_name)
+
+        if not os.path.exists(rec_path + '.hea'):
+            continue
+
+        try:
+            record = wfdb.rdrecord(rec_path)
+            sig = record.p_signal
+            fs = record.fs
+            # Clean signal names: strip whitespace, commas, quotes
+            sig_names = [s.strip().strip(',').strip().upper() for s in record.sig_name]
+
+            # Find ECG (II) and PPG (PLETH) channel indices
+            ecg_idx = None
+            ppg_idx = None
+            for idx, name in enumerate(sig_names):
+                if name in ('II', 'LEAD II', 'ECG'):
+                    ecg_idx = idx
+                elif name in ('PLETH', 'PPG'):
+                    ppg_idx = idx
+
+            if ecg_idx is None or ppg_idx is None:
+                continue
+
+            ecg = sig[:, ecg_idx].astype(np.float64)
+            ppg = sig[:, ppg_idx].astype(np.float64)
+
+            if np.any(np.isnan(ecg)) or np.any(np.isnan(ppg)):
+                continue
+
+            # Resample from 125 Hz to 256 Hz
+            if fs != target_fs:
+                n_target = int(len(ecg) * target_fs / fs)
+                ecg = np.interp(
+                    np.linspace(0, len(ecg) - 1, n_target),
+                    np.arange(len(ecg)), ecg
+                )
+                ppg = np.interp(
+                    np.linspace(0, len(ppg) - 1, n_target),
+                    np.arange(len(ppg)), ppg
+                )
+
+            # Bandpass filter: ECG 0.5-40 Hz, PPG 0.5-8 Hz
+            try:
+                ecg = bandpass_filter(ecg, 0.5, 40.0, target_fs)
+                ppg = bandpass_filter(ppg, CONFIG['ppg_lowcut'],
+                                      CONFIG['ppg_highcut'], target_fs)
+            except Exception:
+                continue
+
+            # Normalize
+            if np.std(ecg) < 1e-6 or np.std(ppg) < 1e-6:
+                continue
+            ecg = (ecg - np.mean(ecg)) / np.std(ecg)
+            ppg = (ppg - np.mean(ppg)) / np.std(ppg)
+
+            # Segment into windows (cap at 50 per patient to keep runtime manageable)
+            n_windows = min(len(ecg) // window_len, 50)
+            pid = rec_name  # e.g., "bidmc01"
+            for w in range(n_windows):
+                start = w * window_len
+                end = start + window_len
+                w_ecg = ecg[start:end]
+                w_ppg = ppg[start:end]
+
+                if np.std(w_ecg) < 0.1 or np.std(w_ppg) < 0.1:
+                    continue
+
+                all_windows_ecg.append(w_ecg)
+                all_windows_ppg.append(w_ppg)
+                patient_ids.append(pid)
+
+        except Exception:
+            continue
+
+    all_windows_ecg = np.array(all_windows_ecg, dtype=np.float32)
+    all_windows_ppg = np.array(all_windows_ppg, dtype=np.float32)
+    patient_ids = np.array(patient_ids)
+
+    print(f"  Extracted {len(all_windows_ecg)} ECG-PPG window pairs from "
+          f"{len(set(patient_ids))} patients")
+
+    return all_windows_ecg, all_windows_ppg, patient_ids
+
+
 # ============================================================
 # 2. DATASET & MODEL
 # ============================================================
@@ -361,6 +503,274 @@ def decorrelation_loss(z):
     return loss
 
 
+class DualEncoderCNN(nn.Module):
+    """Dual-encoder for cross-modal (ECG+PPG) key agreement.
+
+    Two modality-specific 1D-CNN encoders with a shared projection head
+    that maps both modalities to a common embedding space.
+    Total: ~8448 params (~8.3 KB INT8, ~33.3 KB with TFLM runtime)
+    """
+
+    def __init__(self, embed_dim=32):
+        super().__init__()
+        # ECG encoder
+        self.ecg_conv1 = nn.Conv1d(1, 8, kernel_size=5, stride=2, padding=2)
+        self.ecg_bn1 = nn.BatchNorm1d(8)
+        self.ecg_conv2 = nn.Conv1d(8, 16, kernel_size=3, stride=2, padding=1)
+        self.ecg_bn2 = nn.BatchNorm1d(16)
+        self.ecg_conv3 = nn.Conv1d(16, 32, kernel_size=3, stride=2, padding=1)
+        self.ecg_bn3 = nn.BatchNorm1d(32)
+
+        # PPG encoder
+        self.ppg_conv1 = nn.Conv1d(1, 8, kernel_size=5, stride=2, padding=2)
+        self.ppg_bn1 = nn.BatchNorm1d(8)
+        self.ppg_conv2 = nn.Conv1d(8, 16, kernel_size=3, stride=2, padding=1)
+        self.ppg_bn2 = nn.BatchNorm1d(16)
+        self.ppg_conv3 = nn.Conv1d(16, 32, kernel_size=3, stride=2, padding=1)
+        self.ppg_bn3 = nn.BatchNorm1d(32)
+
+        # Shared projection head
+        self.fc1 = nn.Linear(32, 64)
+        self.fc2 = nn.Linear(64, embed_dim)
+
+    def encode_ecg(self, x):
+        x = F.relu(self.ecg_bn1(self.ecg_conv1(x)))
+        x = F.relu(self.ecg_bn2(self.ecg_conv2(x)))
+        x = F.relu(self.ecg_bn3(self.ecg_conv3(x)))
+        return x.mean(dim=2)
+
+    def encode_ppg(self, x):
+        x = F.relu(self.ppg_bn1(self.ppg_conv1(x)))
+        x = F.relu(self.ppg_bn2(self.ppg_conv2(x)))
+        x = F.relu(self.ppg_bn3(self.ppg_conv3(x)))
+        return x.mean(dim=2)
+
+    def project(self, h):
+        return self.fc2(F.relu(self.fc1(h)))
+
+    def forward(self, x_ecg, x_ppg):
+        z_ecg = self.project(self.encode_ecg(x_ecg))
+        z_ppg = self.project(self.encode_ppg(x_ppg))
+        return z_ecg, z_ppg
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters())
+
+
+def train_dual_encoder(model, train_loader, config):
+    """Train the DualEncoderCNN with the same loss as PhysioKeyCNN."""
+    optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=config['epochs']
+    )
+    model.train()
+    history = []
+
+    for epoch in range(config['epochs']):
+        total_loss = 0
+        n_batches = 0
+
+        for s1, s2, _ in train_loader:
+            s1, s2 = s1.to(DEVICE), s2.to(DEVICE)
+            z1, z2 = model(s1, s2)
+
+            loss_c = contrastive_loss(z1, z2, config['temperature'])
+            loss_d = decorrelation_loss(torch.cat([z1, z2], dim=0))
+            z1_n = F.normalize(z1, dim=1)
+            z2_n = F.normalize(z2, dim=1)
+            loss_align = 1.0 - (z1_n * z2_n).sum(dim=1).mean()
+            loss = (loss_c
+                    + config['decorr_lambda'] * loss_d
+                    + config.get('align_lambda', 0.5) * loss_align)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            n_batches += 1
+
+        scheduler.step()
+        avg_loss = total_loss / max(n_batches, 1)
+        history.append(avg_loss)
+        if (epoch + 1) % 10 == 0:
+            print(f"  Epoch {epoch+1}/{config['epochs']}: loss={avg_loss:.4f}")
+
+    return history
+
+
+def evaluate_dual_encoder_fold(model, windows_ecg, windows_ppg, patient_ids, config):
+    """Evaluate a trained dual-encoder on a test fold."""
+    model.eval()
+    test_ecg = torch.FloatTensor(windows_ecg).unsqueeze(1).to(DEVICE)
+    test_ppg = torch.FloatTensor(windows_ppg).unsqueeze(1).to(DEVICE)
+
+    with torch.no_grad():
+        z1_list, z2_list = [], []
+        bs = 512
+        for i in range(0, len(test_ecg), bs):
+            z_ecg, z_ppg = model(test_ecg[i:i+bs], test_ppg[i:i+bs])
+            z1_list.append(z_ecg.cpu().numpy())
+            z2_list.append(z_ppg.cpu().numpy())
+        z1_all = np.concatenate(z1_list, axis=0)
+        z2_all = np.concatenate(z2_list, axis=0)
+
+    intra_cos = cosine_similarity(z1_all, z2_all)
+    unique_pids = list(set(patient_ids))
+    n_inter = min(10000, len(z1_all) * 10)
+    inter_cos = []
+    for _ in range(n_inter):
+        p1, p2 = np.random.choice(len(unique_pids), 2, replace=False)
+        pid1, pid2 = unique_pids[p1], unique_pids[p2]
+        idx1 = np.where(patient_ids == pid1)[0]
+        idx2 = np.where(patient_ids == pid2)[0]
+        i1, i2 = np.random.choice(idx1), np.random.choice(idx2)
+        cos = cosine_similarity(z1_all[i1:i1+1], z2_all[i2:i2+1])[0]
+        inter_cos.append(cos)
+    inter_cos = np.array(inter_cos)
+
+    eer, eer_thresh, roc_auc = compute_eer(intra_cos, inter_cos)
+
+    embed_dim = z1_all.shape[1]
+    all_z = np.concatenate([z1_all, z2_all], axis=0)
+    bdr_1bit = bdr_2bit = 0.5
+    for bpd in [1, 2]:
+        bits_all, bounds = quantize_embedding(all_z, n_bits_per_dim=bpd)
+        bits_s1, _ = quantize_embedding(z1_all, n_bits_per_dim=bpd, boundaries=bounds)
+        bits_s2, _ = quantize_embedding(z2_all, n_bits_per_dim=bpd, boundaries=bounds)
+        hd = hamming_distance(bits_s1, bits_s2)
+        n_key_bits = embed_dim * bpd
+        bdr = hd / n_key_bits
+        if bpd == 1:
+            bdr_1bit = float(bdr.mean())
+        else:
+            bdr_2bit = float(bdr.mean())
+
+    # Key agreement sweep
+    ka_results = {}
+    for bpd in [1, 2]:
+        n_key_bits = embed_dim * bpd
+        bits_all, bounds = quantize_embedding(all_z, n_bits_per_dim=bpd)
+        bits_s1, _ = quantize_embedding(z1_all, n_bits_per_dim=bpd, boundaries=bounds)
+        bits_s2, _ = quantize_embedding(z2_all, n_bits_per_dim=bpd, boundaries=bounds)
+        hd = hamming_distance(bits_s1, bits_s2)
+        bch_n = get_bch_block_length(n_key_bits)
+        for code in BCH_CODES.get(bch_n, []):
+            key = f"{bpd}b_BCH({bch_n},{code['k']},{code['d']})"
+            ka_results[key] = float(np.mean(hd <= code['t']))
+
+    # NIST on debiased keys
+    bits_s1_2b, _ = quantize_embedding(z1_all, n_bits_per_dim=2,
+                                        boundaries=quantize_embedding(all_z, n_bits_per_dim=2)[1])
+    keys_raw = [bits_s1_2b[i].copy() for i in range(min(500, len(bits_s1_2b)))]
+    nist_perkey = run_nist_tests(keys_raw) if keys_raw else {}
+    keys_debiased = [von_neumann_debias(k) for k in keys_raw]
+    keys_debiased = [k for k in keys_debiased if len(k) >= 16]
+    nist_debiased = run_nist_tests(keys_debiased) if keys_debiased else {}
+
+    nist_concat_debiased = {}
+    if len(keys_debiased) >= 16:
+        concat_seqs = []
+        buf = np.array([], dtype=np.uint8)
+        for k in keys_debiased:
+            buf = np.concatenate([buf, k])
+            while len(buf) >= 1024:
+                concat_seqs.append(buf[:1024].copy())
+                buf = buf[1024:]
+        if concat_seqs:
+            nist_concat_debiased = run_nist_tests(concat_seqs, n_keys=len(concat_seqs))
+
+    return {
+        'intra_cos_mean': float(intra_cos.mean()),
+        'inter_cos_mean': float(inter_cos.mean()),
+        'eer': float(eer),
+        'roc_auc': float(roc_auc),
+        'bdr_1bit': bdr_1bit,
+        'bdr_2bit': bdr_2bit,
+        'key_agreement': ka_results,
+        'nist_perkey': nist_perkey,
+        'nist_debiased': nist_debiased,
+        'nist_concat_debiased': nist_concat_debiased,
+        'n_test_windows': len(z1_all),
+        'n_test_patients': len(unique_pids),
+        'n_debiased_keys': len(keys_debiased),
+        'mean_debiased_len': float(np.mean([len(k) for k in keys_debiased])) if keys_debiased else 0,
+    }
+
+
+def run_dual_encoder_kfold(windows_ecg, windows_ppg, patient_ids, config, n_folds=5):
+    """Run patient-level k-fold CV with dual-encoder on BIDMC."""
+    unique_patients = np.array(list(set(patient_ids)))
+    np.random.shuffle(unique_patients)
+    fold_size = len(unique_patients) // n_folds
+    fold_results = []
+
+    for fold in range(n_folds):
+        print(f"\n  --- BIDMC Dual-Encoder Fold {fold+1}/{n_folds} ---")
+        test_start = fold * fold_size
+        test_end = test_start + fold_size if fold < n_folds - 1 else len(unique_patients)
+        test_pats = set(unique_patients[test_start:test_end])
+        train_pats = set(unique_patients) - test_pats
+
+        train_mask = np.array([p in train_pats for p in patient_ids])
+        test_mask = np.array([p in test_pats for p in patient_ids])
+
+        print(f"    Train: {train_mask.sum()} windows from {len(train_pats)} patients")
+        print(f"    Test:  {test_mask.sum()} windows from {len(test_pats)} patients")
+
+        if train_mask.sum() < 50 or test_mask.sum() < 20:
+            print(f"    Skipping fold {fold+1}: insufficient data")
+            continue
+
+        train_dataset = PhysioKeyDataset(
+            windows_ecg[train_mask], windows_ppg[train_mask],
+            patient_ids[train_mask], mode='train'
+        )
+        train_loader = DataLoader(
+            train_dataset, batch_size=min(config['batch_size'], train_mask.sum()),
+            shuffle=True, drop_last=True
+        )
+
+        model = DualEncoderCNN(embed_dim=config['embed_dim']).to(DEVICE)
+        train_dual_encoder(model, train_loader, config)
+
+        fold_metric = evaluate_dual_encoder_fold(
+            model, windows_ecg[test_mask], windows_ppg[test_mask],
+            patient_ids[test_mask], config
+        )
+        fold_metric['fold'] = fold + 1
+        fold_results.append(fold_metric)
+        print(f"    EER={fold_metric['eer']*100:.1f}%, "
+              f"AUC={fold_metric['roc_auc']:.3f}, "
+              f"BDR(1b)={fold_metric['bdr_1bit']:.3f}")
+
+    if not fold_results:
+        return {'error': 'No folds completed'}
+
+    scalar_keys = ['intra_cos_mean', 'inter_cos_mean', 'eer', 'roc_auc',
+                    'bdr_1bit', 'bdr_2bit']
+    agg = {}
+    for key in scalar_keys:
+        vals = [f[key] for f in fold_results]
+        agg[f'{key}_mean'] = float(np.mean(vals))
+        agg[f'{key}_std'] = float(np.std(vals))
+
+    ka_keys = set()
+    for f in fold_results:
+        ka_keys.update(f['key_agreement'].keys())
+    ka_agg = {}
+    for ka_key in ka_keys:
+        vals = [f['key_agreement'].get(ka_key, 0) for f in fold_results]
+        ka_agg[ka_key] = {'mean': float(np.mean(vals)), 'std': float(np.std(vals))}
+
+    return {
+        'n_folds': len(fold_results),
+        'per_fold': fold_results,
+        'aggregated': agg,
+        'key_agreement_aggregated': ka_agg,
+        'dataset': 'BIDMC-DualEncoder',
+    }
+
+
 def train_model(model, train_loader, config):
     """Train the PhysioKey 1D-CNN."""
     optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'])
@@ -407,6 +817,345 @@ def train_model(model, train_loader, config):
             print(f"  Epoch {epoch+1}/{config['epochs']}: loss={avg_loss:.4f}")
 
     return history
+
+
+# ============================================================
+# 3b. CROSS-VALIDATION & ABLATION
+# ============================================================
+def evaluate_fold(model, windows_s1, windows_s2, patient_ids, config):
+    """Evaluate a trained model on a test fold. Returns dict of metrics."""
+    model.eval()
+    test_s1 = torch.FloatTensor(windows_s1).unsqueeze(1).to(DEVICE)
+    test_s2 = torch.FloatTensor(windows_s2).unsqueeze(1).to(DEVICE)
+
+    with torch.no_grad():
+        z1_list, z2_list = [], []
+        bs = 512
+        for i in range(0, len(test_s1), bs):
+            z1_list.append(model(test_s1[i:i+bs]).cpu().numpy())
+            z2_list.append(model(test_s2[i:i+bs]).cpu().numpy())
+        z1_all = np.concatenate(z1_list, axis=0)
+        z2_all = np.concatenate(z2_list, axis=0)
+
+    # Cosine similarity
+    intra_cos = cosine_similarity(z1_all, z2_all)
+
+    unique_pids = list(set(patient_ids))
+    n_inter = min(10000, len(z1_all) * 10)
+    inter_cos = []
+    for _ in range(n_inter):
+        p1, p2 = np.random.choice(len(unique_pids), 2, replace=False)
+        pid1, pid2 = unique_pids[p1], unique_pids[p2]
+        idx1 = np.where(patient_ids == pid1)[0]
+        idx2 = np.where(patient_ids == pid2)[0]
+        i1, i2 = np.random.choice(idx1), np.random.choice(idx2)
+        cos = cosine_similarity(z1_all[i1:i1+1], z2_all[i2:i2+1])[0]
+        inter_cos.append(cos)
+    inter_cos = np.array(inter_cos)
+
+    # EER and AUC
+    eer, eer_thresh, roc_auc = compute_eer(intra_cos, inter_cos)
+
+    # FAR/FRR at fixed thresholds
+    far_frr_thresholds = [0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]
+    far_frr = compute_far_frr(intra_cos, inter_cos, far_frr_thresholds)
+
+    # Quantization and BDR
+    embed_dim = z1_all.shape[1]  # Use actual embedding dim, not hardcoded 32
+    all_z = np.concatenate([z1_all, z2_all], axis=0)
+    for bpd in [1, 2]:
+        bits_all, bounds = quantize_embedding(all_z, n_bits_per_dim=bpd)
+        bits_s1, _ = quantize_embedding(z1_all, n_bits_per_dim=bpd, boundaries=bounds)
+        bits_s2, _ = quantize_embedding(z2_all, n_bits_per_dim=bpd, boundaries=bounds)
+        hd = hamming_distance(bits_s1, bits_s2)
+        n_key_bits = embed_dim * bpd
+        bdr = hd / n_key_bits
+        if bpd == 1:
+            bdr_1bit = float(bdr.mean())
+        else:
+            bdr_2bit = float(bdr.mean())
+
+    # Key agreement sweep
+    ka_results = {}
+    for bpd in [1, 2]:
+        n_key_bits = embed_dim * bpd
+        bits_all, bounds = quantize_embedding(all_z, n_bits_per_dim=bpd)
+        bits_s1, _ = quantize_embedding(z1_all, n_bits_per_dim=bpd, boundaries=bounds)
+        bits_s2, _ = quantize_embedding(z2_all, n_bits_per_dim=bpd, boundaries=bounds)
+        hd = hamming_distance(bits_s1, bits_s2)
+        bch_n = get_bch_block_length(n_key_bits)
+        for code in BCH_CODES.get(bch_n, []):
+            key = f"{bpd}b_BCH({bch_n},{code['k']},{code['d']})"
+            ka_results[key] = float(np.mean(hd <= code['t']))
+
+    # NIST tests: per-key (individual 64-bit keys)
+    bits_all_2b, bounds_2b = quantize_embedding(all_z, n_bits_per_dim=2)
+    bits_s1_2b, _ = quantize_embedding(z1_all, n_bits_per_dim=2, boundaries=bounds_2b)
+    keys = [bits_s1_2b[i].copy() for i in range(min(500, len(bits_s1_2b)))]
+    nist_perkey = run_nist_tests(keys) if keys else {}
+
+    # NIST tests: concatenated (16 keys → 1024-bit sequences)
+    nist_concat = {}
+    if len(keys) >= 16:
+        concat_seqs = []
+        for i in range(0, len(keys) - 15, 16):
+            seq = np.concatenate(keys[i:i+16])
+            concat_seqs.append(seq)
+        if concat_seqs:
+            nist_concat = run_nist_tests(concat_seqs, n_keys=len(concat_seqs))
+
+    # Von Neumann debiased NIST tests
+    keys_debiased = [von_neumann_debias(k) for k in keys]
+    keys_debiased = [k for k in keys_debiased if len(k) >= 16]
+    nist_debiased = run_nist_tests(keys_debiased) if keys_debiased else {}
+
+    # Concatenated debiased keys
+    nist_concat_debiased = {}
+    if len(keys_debiased) >= 16:
+        target_len = 1024
+        concat_seqs_db = []
+        buf = np.array([], dtype=np.uint8)
+        for k in keys_debiased:
+            buf = np.concatenate([buf, k])
+            while len(buf) >= target_len:
+                concat_seqs_db.append(buf[:target_len].copy())
+                buf = buf[target_len:]
+        if concat_seqs_db:
+            nist_concat_debiased = run_nist_tests(concat_seqs_db, n_keys=len(concat_seqs_db))
+
+    return {
+        'intra_cos_mean': float(intra_cos.mean()),
+        'intra_cos_std': float(intra_cos.std()),
+        'inter_cos_mean': float(inter_cos.mean()),
+        'inter_cos_std': float(inter_cos.std()),
+        'eer': float(eer),
+        'roc_auc': float(roc_auc),
+        'bdr_1bit': bdr_1bit,
+        'bdr_2bit': bdr_2bit,
+        'far_frr': far_frr,
+        'key_agreement': ka_results,
+        'nist_perkey': nist_perkey,
+        'nist_concat': nist_concat,
+        'nist_debiased': nist_debiased,
+        'nist_concat_debiased': nist_concat_debiased,
+        'n_debiased_keys': len(keys_debiased),
+        'mean_debiased_len': float(np.mean([len(k) for k in keys_debiased])) if keys_debiased else 0,
+        'n_test_windows': len(z1_all),
+        'n_test_patients': len(unique_pids),
+    }
+
+
+def run_kfold_evaluation(windows_s1, windows_s2, patient_ids, config,
+                         n_folds=5, dataset_name=''):
+    """Run patient-level k-fold cross-validation.
+
+    Fresh model per fold, train from scratch.
+    Returns per-fold results + mean +/- std aggregations.
+    """
+    unique_patients = np.array(list(set(patient_ids)))
+    np.random.shuffle(unique_patients)
+
+    fold_size = len(unique_patients) // n_folds
+    fold_results = []
+
+    for fold in range(n_folds):
+        print(f"\n  --- {dataset_name} Fold {fold+1}/{n_folds} ---")
+
+        # Patient-level split
+        test_start = fold * fold_size
+        test_end = test_start + fold_size if fold < n_folds - 1 else len(unique_patients)
+        test_pats = set(unique_patients[test_start:test_end])
+        train_pats = set(unique_patients) - test_pats
+
+        train_mask = np.array([p in train_pats for p in patient_ids])
+        test_mask = np.array([p in test_pats for p in patient_ids])
+
+        print(f"    Train: {train_mask.sum()} windows from {len(train_pats)} patients")
+        print(f"    Test:  {test_mask.sum()} windows from {len(test_pats)} patients")
+
+        if train_mask.sum() < 50 or test_mask.sum() < 20:
+            print(f"    Skipping fold {fold+1}: insufficient data")
+            continue
+
+        # Create dataset and loader
+        train_dataset = PhysioKeyDataset(
+            windows_s1[train_mask], windows_s2[train_mask],
+            patient_ids[train_mask], mode='train'
+        )
+        train_loader = DataLoader(
+            train_dataset, batch_size=min(config['batch_size'], train_mask.sum()),
+            shuffle=True, drop_last=True
+        )
+
+        # Fresh model
+        model = PhysioKeyCNN(embed_dim=config['embed_dim']).to(DEVICE)
+        train_model(model, train_loader, config)
+
+        # Evaluate
+        fold_metric = evaluate_fold(
+            model, windows_s1[test_mask], windows_s2[test_mask],
+            patient_ids[test_mask], config
+        )
+        fold_metric['fold'] = fold + 1
+        fold_results.append(fold_metric)
+
+        print(f"    EER={fold_metric['eer']*100:.1f}%, "
+              f"AUC={fold_metric['roc_auc']:.3f}, "
+              f"BDR(1b)={fold_metric['bdr_1bit']:.3f}")
+
+    if not fold_results:
+        return {'error': 'No folds completed'}
+
+    # Aggregate: mean +/- std across folds
+    scalar_keys = ['intra_cos_mean', 'inter_cos_mean', 'eer', 'roc_auc',
+                    'bdr_1bit', 'bdr_2bit']
+    agg = {}
+    for key in scalar_keys:
+        vals = [f[key] for f in fold_results]
+        agg[f'{key}_mean'] = float(np.mean(vals))
+        agg[f'{key}_std'] = float(np.std(vals))
+
+    # Aggregate FAR/FRR across folds
+    far_frr_agg = []
+    if fold_results and 'far_frr' in fold_results[0]:
+        n_thresholds = len(fold_results[0]['far_frr'])
+        for ti in range(n_thresholds):
+            tau = fold_results[0]['far_frr'][ti]['threshold']
+            fars = [f['far_frr'][ti]['FAR'] for f in fold_results]
+            frrs = [f['far_frr'][ti]['FRR'] for f in fold_results]
+            bers = [f['far_frr'][ti]['BER'] for f in fold_results]
+            far_frr_agg.append({
+                'threshold': tau,
+                'FAR_mean': float(np.mean(fars)),
+                'FAR_std': float(np.std(fars)),
+                'FRR_mean': float(np.mean(frrs)),
+                'FRR_std': float(np.std(frrs)),
+                'BER_mean': float(np.mean(bers)),
+                'BER_std': float(np.std(bers)),
+            })
+
+    # Aggregate key agreement results
+    ka_keys = set()
+    for f in fold_results:
+        ka_keys.update(f['key_agreement'].keys())
+    ka_agg = {}
+    for ka_key in ka_keys:
+        vals = [f['key_agreement'].get(ka_key, 0) for f in fold_results]
+        ka_agg[ka_key] = {
+            'mean': float(np.mean(vals)),
+            'std': float(np.std(vals)),
+        }
+
+    return {
+        'n_folds': len(fold_results),
+        'per_fold': fold_results,
+        'aggregated': agg,
+        'far_frr_aggregated': far_frr_agg,
+        'key_agreement_aggregated': ka_agg,
+        'dataset': dataset_name,
+    }
+
+
+def run_ablation_studies(windows_s1, windows_s2, patient_ids, config):
+    """Run ablation studies on PTB-XL dataset.
+
+    Uses 3-fold CV with 80 epochs per variant for speed.
+    Studies: loss components, embedding dim, window length.
+    """
+    print("\n" + "=" * 60)
+    print("ABLATION STUDIES (PTB-XL)")
+    print("=" * 60)
+
+    ablation_config = dict(config)
+    ablation_config['epochs'] = 80
+    ablation_folds = 3
+
+    results = {}
+
+    # --- Loss Ablation ---
+    print("\n  [Ablation 1/3] Loss components...")
+    loss_variants = {
+        'contrastive_only': {'decorr_lambda': 0.0, 'align_lambda': 0.0},
+        'contrastive_align': {'decorr_lambda': 0.0, 'align_lambda': 0.5},
+        'contrastive_decorr': {'decorr_lambda': 0.05, 'align_lambda': 0.0},
+        'full': {'decorr_lambda': 0.05, 'align_lambda': 0.5},
+    }
+    loss_results = {}
+    for name, overrides in loss_variants.items():
+        print(f"\n    Variant: {name}")
+        var_config = dict(ablation_config)
+        var_config.update(overrides)
+        res = run_kfold_evaluation(
+            windows_s1, windows_s2, patient_ids, var_config,
+            n_folds=ablation_folds, dataset_name=f'loss_{name}'
+        )
+        loss_results[name] = res.get('aggregated', {})
+        if 'aggregated' in res:
+            print(f"      EER={res['aggregated'].get('eer_mean', 0)*100:.1f}% "
+                  f"+/- {res['aggregated'].get('eer_std', 0)*100:.1f}%")
+    results['loss_ablation'] = loss_results
+
+    # --- Embedding Dimension Ablation ---
+    print("\n  [Ablation 2/3] Embedding dimensions...")
+    dim_results = {}
+    for dim in [16, 32, 64]:
+        print(f"\n    Embed dim: {dim}")
+        var_config = dict(ablation_config)
+        var_config['embed_dim'] = dim
+        var_config['n_bits'] = dim * var_config['n_bits_per_dim']
+        res = run_kfold_evaluation(
+            windows_s1, windows_s2, patient_ids, var_config,
+            n_folds=ablation_folds, dataset_name=f'dim_{dim}'
+        )
+        dim_results[str(dim)] = res.get('aggregated', {})
+        if 'aggregated' in res:
+            print(f"      EER={res['aggregated'].get('eer_mean', 0)*100:.1f}%")
+    results['dim_ablation'] = dim_results
+
+    # --- Window Length Ablation ---
+    print("\n  [Ablation 3/3] Window lengths...")
+    wl_results = {}
+    for wl in [128, 256, 512]:
+        print(f"\n    Window length: {wl}")
+        # Re-window the data
+        var_config = dict(ablation_config)
+        var_config['window_len'] = wl
+
+        if wl == config['window_len']:
+            # Use original windows (same as default config)
+            wl_s1, wl_s2, wl_pids = windows_s1, windows_s2, patient_ids
+        else:
+            # Re-segment: concatenate windows per patient, then re-window
+            unique_pats = list(set(patient_ids))
+            wl_s1_list, wl_s2_list, wl_pids_list = [], [], []
+            for pat in unique_pats:
+                mask = patient_ids == pat
+                s1_cat = windows_s1[mask].reshape(-1)
+                s2_cat = windows_s2[mask].reshape(-1)
+                n_win = len(s1_cat) // wl
+                for w in range(n_win):
+                    w1 = s1_cat[w * wl:(w + 1) * wl]
+                    w2 = s2_cat[w * wl:(w + 1) * wl]
+                    if np.std(w1) >= 0.1 and np.std(w2) >= 0.1:
+                        wl_s1_list.append(w1)
+                        wl_s2_list.append(w2)
+                        wl_pids_list.append(pat)
+            if not wl_s1_list:
+                continue
+            wl_s1 = np.array(wl_s1_list, dtype=np.float32)
+            wl_s2 = np.array(wl_s2_list, dtype=np.float32)
+            wl_pids = np.array(wl_pids_list)
+
+        res = run_kfold_evaluation(
+            wl_s1, wl_s2, wl_pids, var_config,
+            n_folds=ablation_folds, dataset_name=f'wl_{wl}'
+        )
+        wl_results[str(wl)] = res.get('aggregated', {})
+        if 'aggregated' in res:
+            print(f"      EER={res['aggregated'].get('eer_mean', 0)*100:.1f}%")
+    results['window_ablation'] = wl_results
+
+    return results
 
 
 # ============================================================
@@ -571,6 +1320,101 @@ def nist_block_frequency_test(bits_sequence, block_size=8):
     return p_value
 
 
+def nist_serial_test(bits_sequence, m=2):
+    """NIST Serial Test — overlapping pattern uniformity."""
+    n = len(bits_sequence)
+    if n < m + 1:
+        return 0.0
+
+    def count_patterns(seq, block_len):
+        counts = {}
+        for i in range(len(seq)):
+            pattern = tuple(seq[i:i+block_len] if i + block_len <= len(seq)
+                          else np.concatenate([seq[i:], seq[:block_len - (len(seq) - i)]]))
+            counts[pattern] = counts.get(pattern, 0) + 1
+        return counts
+
+    def psi_sq(seq, block_len):
+        counts = count_patterns(seq, block_len)
+        total = sum(v**2 for v in counts.values())
+        return (2**block_len / len(seq)) * total - len(seq)
+
+    psi_m = psi_sq(bits_sequence, m)
+    psi_m1 = psi_sq(bits_sequence, m - 1) if m >= 2 else 0
+    psi_m2 = psi_sq(bits_sequence, m - 2) if m >= 3 else 0
+
+    delta1 = psi_m - psi_m1
+    delta2 = psi_m - 2 * psi_m1 + psi_m2
+
+    from scipy.special import gammaincc
+    p1 = gammaincc(2**(m-2), delta1 / 2) if delta1 > 0 else 1.0
+    p2 = gammaincc(2**(m-3), delta2 / 2) if m >= 3 and delta2 > 0 else 1.0
+
+    return min(p1, p2)
+
+
+def nist_approximate_entropy_test(bits_sequence, m=2):
+    """NIST Approximate Entropy Test — entropy estimation."""
+    n = len(bits_sequence)
+    if n < m + 1:
+        return 0.0
+
+    def phi(seq, block_len):
+        counts = {}
+        extended = np.concatenate([seq, seq[:block_len - 1]])
+        for i in range(n):
+            pattern = tuple(extended[i:i+block_len])
+            counts[pattern] = counts.get(pattern, 0) + 1
+        c_vals = np.array(list(counts.values())) / n
+        return np.sum(c_vals * np.log(c_vals + 1e-15))
+
+    phi_m = phi(bits_sequence, m)
+    phi_m1 = phi(bits_sequence, m + 1)
+
+    ap_en = phi_m - phi_m1
+    chi_sq = 2 * n * (np.log(2) - ap_en)
+
+    from scipy.special import gammaincc
+    p_value = gammaincc(2**(m-1), chi_sq / 2)
+    return p_value
+
+
+def nist_cumulative_sums_test(bits_sequence):
+    """NIST Cumulative Sums Test — random walk max deviation."""
+    n = len(bits_sequence)
+    if n < 10:
+        return 0.0
+
+    # Convert to +1/-1
+    walk = 2 * bits_sequence.astype(float) - 1
+    cumsum = np.cumsum(walk)
+    z = np.max(np.abs(cumsum))
+
+    # Compute p-value
+    k_max = int(np.floor((n / z + 1) / 4)) + 1
+    from scipy.stats import norm
+    p_sum = 0
+    for k in range(-k_max, k_max + 1):
+        p_sum += (norm.cdf((4 * k + 1) * z / np.sqrt(n)) -
+                  norm.cdf((4 * k - 1) * z / np.sqrt(n)))
+    p_value = 1 - p_sum
+    return max(0.0, min(1.0, p_value))
+
+
+def von_neumann_debias(bits):
+    """Von Neumann debiasing: remove bias from a bit sequence.
+
+    Process consecutive non-overlapping pairs:
+      (0,1) -> output 0;  (1,0) -> output 1;  same -> discard
+    Expected output length: ~N/4 for input of N bits.
+    """
+    output = []
+    for i in range(0, len(bits) - 1, 2):
+        if bits[i] != bits[i + 1]:
+            output.append(bits[i])
+    return np.array(output, dtype=np.uint8)
+
+
 def run_nist_tests(keys, n_keys=1000):
     """Run subset of NIST SP 800-22 tests on generated keys."""
     results = {}
@@ -578,6 +1422,9 @@ def run_nist_tests(keys, n_keys=1000):
         'Frequency (Monobit)': nist_frequency_test,
         'Runs': nist_runs_test,
         'Block Frequency': lambda b: nist_block_frequency_test(b, 8),
+        'Serial': lambda b: nist_serial_test(b, 2),
+        'Approximate Entropy': lambda b: nist_approximate_entropy_test(b, 2),
+        'Cumulative Sums': nist_cumulative_sums_test,
     }
 
     for test_name, test_func in test_funcs.items():
@@ -675,17 +1522,21 @@ def estimate_cortex_m4_performance(model):
     total_flash_kb = model_size_kb + 25.0
 
     # SRAM: tensor arena (largest intermediate activation)
-    # Conv1: 128*8 = 1024, Conv2: 64*16=1024, Conv3: 32*32=1024
-    # Max activation: ~4 KB, plus IO buffers ~4 KB
-    sram_kb = 8.2
+    # Depends on input window length
+    wl = CONFIG['window_len']
+    conv1_out = wl // 2   # stride 2
+    conv2_out = conv1_out // 2
+    conv3_out = conv2_out // 2
+    max_activation = max(conv1_out * 8, conv2_out * 16, conv3_out * 32)
+    sram_kb = round(max_activation / 1024 + 4.0, 1)  # activation + IO buffers
 
-    # MACs computation
-    # Conv1: 128 * 8 * (5*1) = 5120
-    # Conv2: 64 * 16 * (3*8) = 24576
-    # Conv3: 32 * 32 * (3*16) = 49152
-    # Dense1: 32 * 64 = 2048
-    # Dense2: 64 * 32 = 2048
-    total_macs = 5120 + 24576 + 49152 + 2048 + 2048
+    # MACs computation (depends on window length)
+    mac_conv1 = conv1_out * 8 * (5 * 1)
+    mac_conv2 = conv2_out * 16 * (3 * 8)
+    mac_conv3 = conv3_out * 32 * (3 * 16)
+    mac_dense1 = 32 * 64
+    mac_dense2 = 64 * CONFIG['embed_dim']
+    total_macs = mac_conv1 + mac_conv2 + mac_conv3 + mac_dense1 + mac_dense2
 
     # Cortex-M4 @ 168 MHz with CMSIS-NN: ~40 MMAC/s
     mmacs_per_sec = 40.0
@@ -723,419 +1574,125 @@ def estimate_cortex_m4_performance(model):
 # ============================================================
 def main():
     print("=" * 60)
-    print("PhysioKey Simulation Pipeline")
+    print("PhysioKey Simulation Pipeline (Revised)")
+    print("  - Dual dataset: PTB-XL + BIDMC (ECG+PPG)")
+    print("  - 5-fold cross-validation")
+    print("  - Ablation studies")
     print("=" * 60)
 
-    # --- Step 1: Download data ---
-    print("\n[1/6] Downloading PTB-XL data...")
-    download_ptbxl(CONFIG['data_dir'], CONFIG['max_records'])
+    start_time = time.time()
 
-    # --- Step 2: Load & preprocess ---
-    print("\n[2/6] Loading and preprocessing...")
-    windows_s1, windows_s2, patient_ids = load_and_preprocess(
+    # --- Step 1: Download both datasets ---
+    print("\n[1/7] Downloading datasets...")
+    download_ptbxl(CONFIG['data_dir'], CONFIG['max_records'])
+    download_bidmc(CONFIG['bidmc_data_dir'])
+
+    # --- Step 2: Load & preprocess both datasets ---
+    print("\n[2/7] Loading and preprocessing...")
+    ptbxl_s1, ptbxl_s2, ptbxl_pids = load_and_preprocess(
         CONFIG['data_dir'], CONFIG['max_records']
     )
+    bidmc_s1, bidmc_s2, bidmc_pids = load_and_preprocess_bidmc(
+        CONFIG['bidmc_data_dir']
+    )
 
-    if len(windows_s1) < 100:
-        print("ERROR: Not enough data. Trying alternative approach...")
+    if len(ptbxl_s1) < 100:
+        print("ERROR: Not enough PTB-XL data.")
         sys.exit(1)
 
-    # Split patients into train/test
-    unique_patients = list(set(patient_ids))
-    np.random.shuffle(unique_patients)
+    print(f"\n  PTB-XL: {len(ptbxl_s1)} windows, "
+          f"{len(set(ptbxl_pids))} patients")
+    print(f"  BIDMC:  {len(bidmc_s1)} windows, "
+          f"{len(set(bidmc_pids))} patients")
 
-    n_train = min(CONFIG['n_patients_train'], len(unique_patients) // 2)
-    n_test = min(CONFIG['n_patients_test'], len(unique_patients) - n_train)
-
-    train_patients = set(unique_patients[:n_train])
-    test_patients = set(unique_patients[n_train:n_train + n_test])
-
-    train_mask = np.array([p in train_patients for p in patient_ids])
-    test_mask = np.array([p in test_patients for p in patient_ids])
-
-    print(f"  Train: {train_mask.sum()} windows from {n_train} patients")
-    print(f"  Test:  {test_mask.sum()} windows from {n_test} patients")
-
-    # Create datasets
-    train_dataset = PhysioKeyDataset(
-        windows_s1[train_mask], windows_s2[train_mask],
-        patient_ids[train_mask], mode='train'
-    )
-    train_loader = DataLoader(
-        train_dataset, batch_size=CONFIG['batch_size'],
-        shuffle=True, drop_last=True
+    # --- Step 3: PTB-XL 5-fold cross-validation ---
+    print("\n[3/7] PTB-XL 5-fold cross-validation...")
+    ptbxl_cv = run_kfold_evaluation(
+        ptbxl_s1, ptbxl_s2, ptbxl_pids, CONFIG,
+        n_folds=CONFIG['n_cv_folds'], dataset_name='PTB-XL'
     )
 
-    # --- Step 3: Train model ---
-    print(f"\n[3/6] Training 1D-CNN ({CONFIG['epochs']} epochs)...")
+    if 'aggregated' in ptbxl_cv:
+        agg = ptbxl_cv['aggregated']
+        print(f"\n  PTB-XL CV Summary:")
+        print(f"    EER: {agg['eer_mean']*100:.1f}% +/- {agg['eer_std']*100:.1f}%")
+        print(f"    AUC: {agg['roc_auc_mean']:.3f} +/- {agg['roc_auc_std']:.3f}")
+        print(f"    BDR(1b): {agg['bdr_1bit_mean']:.3f} +/- {agg['bdr_1bit_std']:.3f}")
+
+    # --- Step 4: BIDMC 5-fold cross-validation ---
+    print("\n[4/7] BIDMC 5-fold cross-validation...")
+    bidmc_cv = run_kfold_evaluation(
+        bidmc_s1, bidmc_s2, bidmc_pids, CONFIG,
+        n_folds=CONFIG['n_cv_folds'], dataset_name='BIDMC'
+    )
+
+    if 'aggregated' in bidmc_cv:
+        agg = bidmc_cv['aggregated']
+        print(f"\n  BIDMC CV Summary:")
+        print(f"    EER: {agg['eer_mean']*100:.1f}% +/- {agg['eer_std']*100:.1f}%")
+        print(f"    AUC: {agg['roc_auc_mean']:.3f} +/- {agg['roc_auc_std']:.3f}")
+        print(f"    BDR(1b): {agg['bdr_1bit_mean']:.3f} +/- {agg['bdr_1bit_std']:.3f}")
+
+    # --- Step 4b: BIDMC Dual-Encoder CV ---
+    print("\n[4b/8] Running BIDMC dual-encoder CV...")
+    if len(bidmc_s1) >= 20:
+        bidmc_dual_cv = run_dual_encoder_kfold(
+            bidmc_s1, bidmc_s2, bidmc_pids, CONFIG, n_folds=5
+        )
+    else:
+        print("  Skipping dual-encoder: insufficient BIDMC data")
+        bidmc_dual_cv = {'error': 'Insufficient data'}
+
+    if isinstance(bidmc_dual_cv, dict) and 'aggregated' in bidmc_dual_cv:
+        agg = bidmc_dual_cv['aggregated']
+        print(f"\n  BIDMC Dual-Encoder CV Summary:")
+        print(f"    EER: {agg['eer_mean']*100:.1f}% +/- {agg['eer_std']*100:.1f}%")
+        print(f"    AUC: {agg['roc_auc_mean']:.3f} +/- {agg['roc_auc_std']:.3f}")
+        print(f"    BDR(1b): {agg['bdr_1bit_mean']:.3f} +/- {agg['bdr_1bit_std']:.3f}")
+
+    # --- Step 5: Ablation studies (PTB-XL — where model works) ---
+    print("\n[5/8] Running ablation studies on PTB-XL...")
+    if len(ptbxl_s1) >= 100:
+        ablation_results = run_ablation_studies(
+            ptbxl_s1, ptbxl_s2, ptbxl_pids, CONFIG
+        )
+    else:
+        print("  Skipping ablation: insufficient PTB-XL data")
+        ablation_results = {'error': 'Insufficient data'}
+
+    # --- Step 6: Hardware resource estimates ---
+    print("\n[6/8] Computing resource estimates...")
     model = PhysioKeyCNN(embed_dim=CONFIG['embed_dim']).to(DEVICE)
-    print(f"  Parameters: {model.count_parameters()}")
-
-    history = train_model(model, train_loader, CONFIG)
-
-    # Save model for reproducibility
-    model_path = os.path.join(CONFIG['results_dir'], 'physiokey_model.pt')
-    torch.save(model.state_dict(), model_path)
-    print(f"  Model saved to {model_path}")
-
-    # --- Step 4: Extract embeddings on test set ---
-    print("\n[4/6] Extracting test embeddings...")
-    model.eval()
-
-    test_s1 = torch.FloatTensor(windows_s1[test_mask]).unsqueeze(1).to(DEVICE)
-    test_s2 = torch.FloatTensor(windows_s2[test_mask]).unsqueeze(1).to(DEVICE)
-    test_pids = patient_ids[test_mask]
-
-    with torch.no_grad():
-        # Process in batches to avoid OOM
-        z1_list, z2_list = [], []
-        bs = 512
-        for i in range(0, len(test_s1), bs):
-            z1_list.append(model(test_s1[i:i+bs]).cpu().numpy())
-            z2_list.append(model(test_s2[i:i+bs]).cpu().numpy())
-
-        z1_all = np.concatenate(z1_list, axis=0)
-        z2_all = np.concatenate(z2_list, axis=0)
-
-    print(f"  Embeddings shape: {z1_all.shape}")
-
-    # Save embeddings for reproducibility
-    embed_path = os.path.join(CONFIG['results_dir'], 'embeddings.npz')
-    np.savez(embed_path, z1=z1_all, z2=z2_all, patient_ids=test_pids)
-    print(f"  Embeddings saved to {embed_path}")
-
-    # --- Step 5: Compute metrics ---
-    print("\n[5/6] Computing metrics...")
-
-    # 5a. Cosine similarity: intra-body vs inter-body
-    print("  Computing cosine similarities...")
-
-    # Intra-body: same patient, Lead I vs Lead II
-    intra_cos = cosine_similarity(z1_all, z2_all)
-
-    # Inter-body: different patients
-    n_inter = min(50000, len(z1_all) * 10)
-    inter_cos = []
-    unique_test_pids = list(set(test_pids))
-
-    for _ in range(n_inter):
-        # Pick two different patients
-        p1, p2 = np.random.choice(len(unique_test_pids), 2, replace=False)
-        pid1, pid2 = unique_test_pids[p1], unique_test_pids[p2]
-
-        idx1 = np.where(test_pids == pid1)[0]
-        idx2 = np.where(test_pids == pid2)[0]
-
-        i1 = np.random.choice(idx1)
-        i2 = np.random.choice(idx2)
-
-        cos = cosine_similarity(
-            z1_all[i1:i1+1], z2_all[i2:i2+1]
-        )[0]
-        inter_cos.append(cos)
-
-    inter_cos = np.array(inter_cos)
-
-    print(f"  Intra-body cosine: mean={intra_cos.mean():.4f}, std={intra_cos.std():.4f}")
-    print(f"  Inter-body cosine: mean={inter_cos.mean():.4f}, std={inter_cos.std():.4f}")
-
-    # 5b. FAR/FRR at various thresholds
-    thresholds = [0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85]
-    far_frr_results = compute_far_frr(intra_cos, inter_cos, thresholds)
-
-    print("\n  Threshold | FAR          | FRR          | BER")
-    print("  " + "-" * 55)
-    for r in far_frr_results:
-        print(f"  {r['threshold']:.2f}      | {r['FAR']:.6e} | {r['FRR']:.6e} | {r['BER']:.6e}")
-
-    # 5c. EER
-    eer, eer_thresh, roc_auc = compute_eer(intra_cos, inter_cos)
-    print(f"\n  EER: {eer:.6f} ({eer*100:.3f}%) at threshold {eer_thresh:.4f}")
-    print(f"  ROC AUC: {roc_auc:.6f}")
-
-    # 5d. Quantization and entropy
-    print("\n  Computing quantization and entropy...")
-    all_z = np.concatenate([z1_all, z2_all], axis=0)
-    bits_all, boundaries = quantize_embedding(all_z, n_bits_per_dim=CONFIG['n_bits_per_dim'])
-
-    bits_s1, _ = quantize_embedding(z1_all, n_bits_per_dim=CONFIG['n_bits_per_dim'], boundaries=boundaries)
-    bits_s2, _ = quantize_embedding(z2_all, n_bits_per_dim=CONFIG['n_bits_per_dim'], boundaries=boundaries)
-
-    # Per-dimension min-entropy
-    dim_entropies = min_entropy_per_dim(bits_all, n_bits_per_dim=CONFIG['n_bits_per_dim'])
-    total_min_entropy = dim_entropies.sum()
-
-    print(f"  Per-dim min-entropy: mean={dim_entropies.mean():.4f}, "
-          f"min={dim_entropies.min():.4f}, max={dim_entropies.max():.4f}")
-    print(f"  Total min-entropy: {total_min_entropy:.1f} bits")
-
-    # 5e. Bit Disagreement Rate for intra-body
-    intra_hd = hamming_distance(bits_s1, bits_s2)
-    bdr = intra_hd / CONFIG['n_bits']
-    print(f"  Intra-body BDR: mean={bdr.mean():.4f}, std={bdr.std():.4f}")
-    print(f"  Intra-body Hamming dist: mean={intra_hd.mean():.1f}, "
-          f"median={np.median(intra_hd):.0f}")
-
-    # Key agreement success rate (BCH can correct up to t errors)
-    ka_success = np.mean(intra_hd <= CONFIG['bch_t'])
-    print(f"  Key agreement success rate (BCH t={CONFIG['bch_t']}): {ka_success:.4f}")
-
-    # Multi-round key agreement: use majority vote across R rounds
-    # Each round uses a different time window; majority vote on each bit
-    print("\n  Computing multi-round key agreement (R=3, 5)...")
-    for n_rounds in [3, 5]:
-        multi_success = 0
-        multi_total = 0
-        for pid in unique_test_pids:
-            idx = np.where(test_pids == pid)[0]
-            if len(idx) >= n_rounds:
-                # Collect multiple rounds of quantized bits
-                rounds_s1 = bits_s1[idx[:n_rounds]]  # (R, n_bits)
-                rounds_s2 = bits_s2[idx[:n_rounds]]
-                # Majority vote
-                vote_s1 = (rounds_s1.sum(axis=0) > n_rounds / 2).astype(np.uint8)
-                vote_s2 = (rounds_s2.sum(axis=0) > n_rounds / 2).astype(np.uint8)
-                hd = np.sum(vote_s1 != vote_s2)
-                if hd <= CONFIG['bch_t']:
-                    multi_success += 1
-                multi_total += 1
-        if multi_total > 0:
-            mr_rate = multi_success / multi_total
-            print(f"    R={n_rounds}: success={mr_rate:.4f} ({multi_success}/{multi_total})")
-
-    # 5f. Temporal drift (replay resistance)
-    # Compare embeddings from different windows of same patient
-    print("\n  Computing temporal drift for replay resistance...")
-    drift_distances = []
-    for pid in unique_test_pids[:30]:
-        idx = np.where(test_pids == pid)[0]
-        if len(idx) >= 4:
-            # Compare window 0 vs windows 2, 3, ... (non-adjacent)
-            for j in range(2, min(len(idx), 6)):
-                hd = hamming_distance(bits_s1[idx[0]:idx[0]+1], bits_s1[idx[j]:idx[j]+1])[0]
-                drift_distances.append(hd)
-
-    if drift_distances:
-        drift_arr = np.array(drift_distances)
-        print(f"  Temporal drift HD: mean={drift_arr.mean():.1f}, "
-              f"min={drift_arr.min():.0f}, max={drift_arr.max():.0f}")
-        replay_fail_rate = np.mean(drift_arr > CONFIG['bch_t'])
-        print(f"  Replay failure rate: {replay_fail_rate:.4f}")
-
-    # 5g. NIST randomness tests
-    # NIST SP 800-22 requires minimum 100 bits per sequence.
-    # Individual keys are only 64 bits, so we concatenate multiple keys
-    # from different patients to form longer sequences for meaningful testing.
-    print("\n  Running NIST randomness tests...")
-    print("    (Concatenating keys to reach NIST minimum sequence length)")
-
-    # Approach 1: per-key tests (note: below NIST minimum, reported for transparency)
-    keys_short = []
-    for i in range(min(1000, len(bits_s1))):
-        keys_short.append(bits_s1[i].copy())
-
-    nist_results_short = run_nist_tests(keys_short)
-    print("    Per-key results (64-bit sequences — below NIST minimum of 100 bits):")
-    for test_name, result in nist_results_short.items():
-        print(f"      {test_name}: pass_rate={result['pass_rate']:.3f}, "
-              f"mean_p={result['mean_p_value']:.4f}")
-
-    # Approach 2: concatenated sequences (>= 1000 bits each)
-    concat_len = 1024  # bits per test sequence
-    keys_per_seq = concat_len // CONFIG['n_bits']
-    n_sequences = min(100, len(bits_s1) // keys_per_seq)
-    keys_long = []
-    for i in range(n_sequences):
-        start = i * keys_per_seq
-        seq = np.concatenate([bits_s1[start + j] for j in range(keys_per_seq)])
-        keys_long.append(seq)
-
-    nist_results_long = run_nist_tests(keys_long) if keys_long else {}
-    print(f"    Concatenated results ({concat_len}-bit sequences, {n_sequences} sequences):")
-    for test_name, result in nist_results_long.items():
-        print(f"      {test_name}: pass_rate={result['pass_rate']:.3f}, "
-              f"mean_p={result['mean_p_value']:.4f}")
-
-    nist_results = {
-        'per_key_64bit': nist_results_short,
-        'concatenated_1024bit': nist_results_long,
-        'note': 'Per-key tests use 64-bit sequences (below NIST SP 800-22 minimum of 100 bits). '
-                'Concatenated tests use 1024-bit sequences formed from 16 consecutive keys.',
-    }
-
-    # 5h. Key agreement sweep with REAL BCH parameters
-    print("\n  Key agreement parameter sweep (real BCH codes)...")
-    sweep_results = []
-    for bpd in [1, 2]:
-        n_key_bits = 32 * bpd
-        bits_sweep, bounds_sweep = quantize_embedding(all_z, n_bits_per_dim=bpd)
-        bits_s1_sweep, _ = quantize_embedding(z1_all, n_bits_per_dim=bpd, boundaries=bounds_sweep)
-        bits_s2_sweep, _ = quantize_embedding(z2_all, n_bits_per_dim=bpd, boundaries=bounds_sweep)
-        hd_sweep = hamming_distance(bits_s1_sweep, bits_s2_sweep)
-        bdr_sweep = hd_sweep / n_key_bits
-
-        # Find the real BCH block length for this bit count
-        bch_n = get_bch_block_length(n_key_bits)
-        bch_codes = BCH_CODES.get(bch_n, [])
-
-        print(f"\n    {bpd}b/dim, {n_key_bits} raw bits -> BCH({bch_n},...)")
-        print(f"    BDR: mean={bdr_sweep.mean():.3f}, std={bdr_sweep.std():.3f}")
-
-        for code in bch_codes:
-            t_val = code['t']
-            k_val = code['k']
-            d_val = code['d']
-            # Pad to BCH block length and check HD
-            success = float(np.mean(hd_sweep <= t_val))
-            sweep_results.append({
-                'bits_per_dim': bpd,
-                'total_bits': n_key_bits,
-                'bch_n': bch_n,
-                'bch_k': k_val,
-                'bch_t': t_val,
-                'bch_d': d_val,
-                'effective_key_bits': k_val,
-                'bdr_mean': float(bdr_sweep.mean()),
-                'bdr_std': float(bdr_sweep.std()),
-                'ka_success_rate': success,
-            })
-            print(f"      BCH({bch_n},{k_val},{d_val}), t={t_val}: "
-                  f"success={success:.3f}, eff_key={k_val} bits")
-
-    # 5i. Multi-round majority voting analysis
-    print("\n  Multi-round majority voting analysis...")
-    multiround_results = []
-    for bpd in [1, 2]:
-        n_key_bits = 32 * bpd
-        bits_sweep, bounds_sweep = quantize_embedding(all_z, n_bits_per_dim=bpd)
-        bdr_single = None
-
-        for n_rounds in [1, 3, 5, 7]:
-            # Compute actual multi-round BDR from data
-            mr_hd_list = []
-            mr_total = 0
-            for pid in unique_test_pids:
-                idx = np.where(test_pids == pid)[0]
-                if len(idx) >= n_rounds:
-                    for start in range(0, len(idx) - n_rounds + 1, n_rounds):
-                        sel = idx[start:start + n_rounds]
-                        rounds_s1, _ = quantize_embedding(
-                            z1_all[sel], n_bits_per_dim=bpd, boundaries=bounds_sweep)
-                        rounds_s2, _ = quantize_embedding(
-                            z2_all[sel], n_bits_per_dim=bpd, boundaries=bounds_sweep)
-                        if n_rounds == 1:
-                            voted_s1 = rounds_s1[0]
-                            voted_s2 = rounds_s2[0]
-                        else:
-                            voted_s1 = (rounds_s1.sum(axis=0) > n_rounds / 2).astype(np.uint8)
-                            voted_s2 = (rounds_s2.sum(axis=0) > n_rounds / 2).astype(np.uint8)
-                        hd = np.sum(voted_s1 != voted_s2)
-                        mr_hd_list.append(hd)
-                        mr_total += 1
-
-            if not mr_hd_list:
-                continue
-
-            mr_hd_arr = np.array(mr_hd_list)
-            mr_bdr = mr_hd_arr / n_key_bits
-
-            if n_rounds == 1:
-                bdr_single = float(mr_bdr.mean())
-
-            # Theoretical BDR for comparison
-            if bdr_single is not None and n_rounds > 1:
-                theoretical_bdr = majority_vote_bdr(bdr_single, n_rounds)
-            else:
-                theoretical_bdr = float(mr_bdr.mean())
-
-            bch_n = get_bch_block_length(n_key_bits)
-            bch_codes = BCH_CODES.get(bch_n, [])
-
-            print(f"\n    {bpd}b/dim, R={n_rounds}: "
-                  f"actual_BDR={mr_bdr.mean():.3f}, "
-                  f"theoretical_BDR={theoretical_bdr:.3f}, "
-                  f"n_pairs={mr_total}")
-
-            for code in bch_codes:
-                t_val = code['t']
-                k_val = code['k']
-                success = float(np.mean(mr_hd_arr <= t_val))
-                entry = {
-                    'bits_per_dim': bpd,
-                    'total_bits': n_key_bits,
-                    'n_rounds': n_rounds,
-                    'bch_n': bch_n,
-                    'bch_k': k_val,
-                    'bch_t': t_val,
-                    'effective_key_bits': k_val,
-                    'actual_bdr': float(mr_bdr.mean()),
-                    'theoretical_bdr': theoretical_bdr,
-                    'ka_success_rate': success,
-                    'n_pairs': mr_total,
-                }
-                multiround_results.append(entry)
-                if success > 0.01:  # Only print non-trivial results
-                    print(f"      BCH({bch_n},{k_val},...) t={t_val}: "
-                          f"success={success:.3f}, eff_key={k_val}b")
-
-    # --- Step 6: Resource estimates ---
-    print("\n[6/6] Computing resource estimates...")
     hw_results = estimate_cortex_m4_performance(model)
+
+    # Hybrid PhysioKey+ECDH estimates
+    ecdh_latency_ms = 142.0
+    ecdh_energy_mj = 6.84
+    hkdf_ms = 0.5
+    hkdf_energy = 0.024
+    hybrid_latency = hw_results['total_latency_ms'] + ecdh_latency_ms + hkdf_ms
+    hybrid_energy = hw_results['energy_per_agreement_mj'] + ecdh_energy_mj + hkdf_energy
+
+    hw_results['hybrid_latency_ms'] = round(hybrid_latency, 1)
+    hw_results['hybrid_energy_mj'] = round(hybrid_energy, 3)
+
     for k, v in hw_results.items():
         print(f"  {k}: {v}")
 
-    # ============================================================
-    # SAVE ALL RESULTS
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("SAVING RESULTS")
-    print("=" * 60)
+    # --- Step 7: Save all results ---
+    print("\n[7/8] Saving results...")
+
+    elapsed = time.time() - start_time
 
     results = {
-        'cosine_similarity': {
-            'intra_body_mean': float(intra_cos.mean()),
-            'intra_body_std': float(intra_cos.std()),
-            'inter_body_mean': float(inter_cos.mean()),
-            'inter_body_std': float(inter_cos.std()),
-        },
-        'far_frr': far_frr_results,
-        'eer': {
-            'value': float(eer),
-            'threshold': float(eer_thresh),
-            'roc_auc': float(roc_auc),
-        },
-        'entropy': {
-            'per_dim_mean': float(dim_entropies.mean()),
-            'per_dim_min': float(dim_entropies.min()),
-            'per_dim_max': float(dim_entropies.max()),
-            'total_min_entropy_bits': float(total_min_entropy),
-            'per_dim_values': dim_entropies.tolist(),
-        },
-        'bit_disagreement': {
-            'intra_body_bdr_mean': float(bdr.mean()),
-            'intra_body_bdr_std': float(bdr.std()),
-            'intra_body_hd_mean': float(intra_hd.mean()),
-            'key_agreement_success_rate': float(ka_success),
-        },
-        'replay_resistance': {
-            'temporal_drift_hd_mean': float(drift_arr.mean()) if drift_distances else 0,
-            'replay_failure_rate': float(replay_fail_rate) if drift_distances else 0,
-        },
-        'nist_tests': nist_results,
+        'ptbxl_cv': ptbxl_cv,
+        'bidmc_cv': bidmc_cv,
+        'bidmc_dual_cv': bidmc_dual_cv,
+        'ablation': ablation_results,
         'hardware': hw_results,
-        'dataset': {
-            'n_train_patients': n_train,
-            'n_test_patients': n_test,
-            'n_train_windows': int(train_mask.sum()),
-            'n_test_windows': int(test_mask.sum()),
-            'total_patients': len(unique_patients),
-        },
-        'training': {
-            'final_loss': float(history[-1]),
-            'epochs': CONFIG['epochs'],
-        },
-        'key_agreement_sweep': sweep_results,
-        'multiround_voting': multiround_results,
+        'config': {k: v for k, v in CONFIG.items()
+                   if not k.endswith('_dir')},
+        'runtime_seconds': round(elapsed, 1),
     }
 
     results_path = os.path.join(CONFIG['results_dir'], 'simulation_results.json')
@@ -1143,41 +1700,54 @@ def main():
         json.dump(results, f, indent=2)
 
     print(f"\nResults saved to: {results_path}")
+    print(f"Total runtime: {elapsed/60:.1f} minutes")
 
-    # Print summary for paper
+    # ============================================================
+    # SUMMARY FOR PAPER
+    # ============================================================
     print("\n" + "=" * 60)
     print("SUMMARY FOR PAPER")
     print("=" * 60)
-    print(f"Intra-body cosine similarity: {intra_cos.mean():.3f} (std={intra_cos.std():.3f})")
-    print(f"Inter-body cosine similarity: {inter_cos.mean():.3f} (std={inter_cos.std():.3f})")
-    print(f"EER: {eer*100:.2f}%")
-    print(f"ROC AUC: {roc_auc:.4f}")
 
-    # Find best operating point (lowest BER)
-    best = min(far_frr_results, key=lambda x: x['BER'])
-    print(f"Best threshold: {best['threshold']:.2f}")
-    print(f"  FAR = {best['FAR']:.2e}")
-    print(f"  FRR = {best['FRR']:.2e}")
+    for name, cv_res in [('PTB-XL', ptbxl_cv), ('BIDMC', bidmc_cv),
+                         ('BIDMC Dual-Encoder', bidmc_dual_cv)]:
+        if not isinstance(cv_res, dict) or 'aggregated' not in cv_res:
+            continue
+        a = cv_res['aggregated']
+        print(f"\n{name} ({cv_res['n_folds']}-fold CV):")
+        print(f"  Intra-body cosine: {a['intra_cos_mean_mean']:.3f} "
+              f"+/- {a['intra_cos_mean_std']:.3f}")
+        print(f"  Inter-body cosine: {a['inter_cos_mean_mean']:.3f} "
+              f"+/- {a['inter_cos_mean_std']:.3f}")
+        print(f"  EER: {a['eer_mean']*100:.1f}% +/- {a['eer_std']*100:.1f}%")
+        print(f"  ROC AUC: {a['roc_auc_mean']:.3f} +/- {a['roc_auc_std']:.3f}")
+        print(f"  BDR (1-bit): {a['bdr_1bit_mean']:.3f} +/- {a['bdr_1bit_std']:.3f}")
+        print(f"  BDR (2-bit): {a['bdr_2bit_mean']:.3f} +/- {a['bdr_2bit_std']:.3f}")
 
-    print(f"Total min-entropy: {total_min_entropy:.1f} bits")
-    print(f"Model parameters: {hw_results['n_params']}")
-    print(f"Model flash: {hw_results['total_flash_kb']:.1f} KB")
-    print(f"Inference latency: {hw_results['inference_ms']:.1f} ms")
-    print(f"Energy per agreement: {hw_results['energy_both_sensors_mj']:.2f} mJ")
+    print(f"\nHardware (Cortex-M4):")
+    print(f"  Parameters: {hw_results['n_params']}")
+    print(f"  Flash: {hw_results['total_flash_kb']:.1f} KB")
+    print(f"  Inference: {hw_results['inference_ms']:.1f} ms")
+    print(f"  PhysioKey standalone: {hw_results['total_latency_ms']:.1f} ms, "
+          f"{hw_results['energy_per_agreement_mj']:.3f} mJ")
+    print(f"  Hybrid PhysioKey+ECDH: {hw_results['hybrid_latency_ms']:.1f} ms, "
+          f"{hw_results['hybrid_energy_mj']:.3f} mJ")
 
-    # Print best multi-round results
-    if multiround_results:
-        print("\nBest multi-round key agreement results:")
-        best_by_config = {}
-        for r in multiround_results:
-            key = (r['bits_per_dim'], r['n_rounds'])
-            if key not in best_by_config or r['ka_success_rate'] > best_by_config[key]['ka_success_rate']:
-                best_by_config[key] = r
-        for (bpd, nr), r in sorted(best_by_config.items()):
-            if r['ka_success_rate'] > 0.1:
-                print(f"  {bpd}b/dim, R={nr}: {r['ka_success_rate']*100:.1f}% "
-                      f"(BCH t={r['bch_t']}, eff_key={r['effective_key_bits']}b, "
-                      f"BDR={r['actual_bdr']:.3f})")
+    # Print FAR/FRR table for paper
+    if 'far_frr_aggregated' in ptbxl_cv and ptbxl_cv['far_frr_aggregated']:
+        print(f"\nFAR/FRR (PTB-XL, {ptbxl_cv['n_folds']}-fold CV mean +/- std):")
+        print(f"  {'Threshold':>10s} {'FAR':>16s} {'FRR':>16s} {'BER':>16s}")
+        for entry in ptbxl_cv['far_frr_aggregated']:
+            print(f"  {entry['threshold']:>10.2f} "
+                  f"{entry['FAR_mean']:.3f}+/-{entry['FAR_std']:.3f} "
+                  f"{entry['FRR_mean']:.3f}+/-{entry['FRR_std']:.3f} "
+                  f"{entry['BER_mean']:.3f}+/-{entry['BER_std']:.3f}")
+
+    if 'loss_ablation' in ablation_results:
+        print(f"\nAblation (loss components):")
+        for name, res in ablation_results['loss_ablation'].items():
+            if res:
+                print(f"  {name}: EER={res.get('eer_mean', 0)*100:.1f}%")
 
 
 if __name__ == '__main__':

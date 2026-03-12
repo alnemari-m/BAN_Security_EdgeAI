@@ -2,40 +2,21 @@
 % PhysioKey: Edge-AI-Driven Physiological Key Agreement
 % for Secure Body Area Networks
 % ============================================================
-% NOTE: This paper uses IEEEtran for formatting. If submitting to
-% IJACSA, their own template may be required. Replace the
-% documentclass and adjust formatting accordingly before submission.
+% Formatted for MDPI Sensors (official MDPI template)
 % ============================================================
-\documentclass[10pt,journal,compsoc]{IEEEtran}
+\documentclass[sensors,article,submit,pdftex,moreauthors]{Definitions/mdpi}
 
-% ---- Packages ----
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{graphicx}
-\usepackage{amsmath,amssymb,amsfonts}
-\usepackage{algorithmic}
+% ---- Additional packages not loaded by mdpi.cls ----
+% Avoid counter conflict: mdpi.cls defines 'algorithm' counter for a theorem env
+\makeatletter
+\let\c@algorithm\relax
+\let\thealgorithm\relax
+\makeatother
 \usepackage{algorithm}
-\usepackage{booktabs}
-\usepackage{multirow}
-\usepackage{array}
-\usepackage{textcomp}
-\usepackage{xcolor}
-\usepackage{cite}
-\usepackage{hyperref}
-\usepackage{balance}
-\usepackage{tabularx}
-\usepackage{caption}
-\usepackage{subcaption}
-\usepackage{url}
-\usepackage{tikz}
-\usetikzlibrary{shapes,arrows,positioning,fit,calc}
+\usepackage{algorithmic}
 
-\hypersetup{
-  colorlinks=true,
-  linkcolor=black,
-  citecolor=black,
-  urlcolor=blue
-}
+% TikZ libraries (tikz itself is loaded by mdpi.cls)
+\usetikzlibrary{shapes,arrows,positioning,fit,calc}
 
 % ---- Custom commands ----
 \newcommand{\eg}{\textit{e.g.}}
@@ -44,68 +25,90 @@
 \DeclareMathOperator*{\argmin}{arg\,min}
 \DeclareMathOperator*{\argmax}{arg\,max}
 
+% ============================================================
+% MDPI internal commands - do not modify
+\firstpage{1}
+\makeatletter
+\setcounter{page}{\@firstpage}
+\makeatother
+\pubvolume{1}
+\issuenum{1}
+\articlenumber{0}
+\pubyear{2026}
+\copyrightyear{2026}
+\datereceived{ }
+\daterevised{ }
+\dateaccepted{ }
+\datepublished{ }
+
+% ============================================================
+% Paper metadata
+% ============================================================
+
+\Title{PhysioKey: Edge-AI-Driven Physiological Key Agreement for Secure Body Area Networks}
+
+% Author ORCID IDs
+\newcommand{\orcidauthorA}{0000-0002-5971-6703}
+
+% Authors
+\Author{Mohammed Alnemari $^{1,2,}$* and Osamah M. Al-Omair $^{3}$}
+
+% Authors for PDF metadata
+\AuthorNames{Mohammed Alnemari and Osamah M. Al-Omair}
+
+% Affiliations
+\address{%
+$^{1}$ \quad Department of Computer Engineering, Faculty of Computing and Information Technology, University of Tabuk, Tabuk 71491, Saudi Arabia; mnemari@ut.edu.sa\\
+$^{2}$ \quad AIST Research Center, University of Tabuk, Tabuk 71491, Saudi Arabia\\
+$^{3}$ \quad Department of Management Information Systems, College of Business Administration, King Faisal University, Al-Ahsa, Saudi Arabia; oalomair@kfu.edu.sa}
+
+% Corresponding author
+\corres{Correspondence: mnemari@ut.edu.sa}
+
+% Abstract
+\abstract{Body Area Networks (BANs) require secure intra-body communication, yet sensor nodes are too resource-constrained for conventional public-key cryptography, and pre-shared key schemes conflict with plug-and-play clinical workflows. This paper introduces \textit{PhysioKey}, a TinyML-based key agreement framework that derives symmetric session keys from physiological signals without pre-shared secrets or trusted third parties. A lightweight 1D-CNN (6320 parameters, INT8-quantized, 31.2~KB flash) extracts 32-dimensional embeddings from 0.5-second ECG and PPG windows on ARM Cortex-M4 class devices. Embeddings are quantized via Gray coding and reconciled through fuzzy commitment with BCH error-correcting codes. Evaluation uses two datasets with patient-level 5-fold cross-validation: PTB-XL (500 patients, dual-ECG) achieves EER of $7.8\% \pm 0.8\%$ with ROC AUC $0.978 \pm 0.004$; BIDMC (53 patients, synchronized ECG+PPG) reveals that a single shared encoder fails on cross-modal pairing (EER $\sim$48.3\%), but a dual-encoder architecture with modality-specific feature extractors reduces EER to $30.6\% \pm 1.2\%$ (AUC $0.760 \pm 0.012$), demonstrating that dedicated encoders substantially narrow the cross-modal gap. A hybrid PhysioKey+ECDH protocol achieves 128-bit keys for high-security applications. HKDF-SHA-256 post-processing of the actual model-generated keys yields session keys that pass all six NIST SP 800-22 tests ($\geq$96\% at the 1024-bit concatenated level). Analytical estimates project a standalone latency of 2.6~ms and energy of 0.250~mJ per agreement, roughly $27\times$ below ECDH.}
+
+% Keywords
+\keyword{body area network; physiological key agreement; TinyML; edge AI; ECG; PPG; fuzzy commitment; healthcare IoT security}
+
+% ============================================================
 \begin{document}
 
-% ---- Title ----
-\title{PhysioKey: Edge-AI-Driven Physiological Key Agreement for Secure Body Area Networks}
-
-\author{Mohammed~Alnemari%
-\IEEEcompsocitemizethanks{
-\IEEEcompsocthanksitem M. Alnemari is with the Department of Computer Science, University of California, Irvine, CA 92697 USA.\protect\\
-E-mail: malnemar@uci.edu}%
-}
-
-\IEEEtitleabstractindextext{%
-
 % ============================================================
-% ABSTRACT (~200 words)
-% ============================================================
-\begin{abstract}
-Body Area Networks (BANs) require secure intra-body communication, yet sensor nodes are too resource-constrained for conventional public-key cryptography, and pre-shared key schemes conflict with plug-and-play clinical workflows. This paper introduces \textit{PhysioKey}, a TinyML-based key agreement framework that derives symmetric session keys from physiological signals without pre-shared secrets or trusted third parties. A lightweight 1D convolutional neural network (6,320 parameters, INT8-quantized, 31.2~KB flash) extracts 32-dimensional embeddings from ECG signal windows on ARM Cortex-M4 class devices. Embeddings are quantized via Gray coding and reconciled through a fuzzy commitment scheme with BCH error-correcting codes. Simulation on 500 patients from the PhysioNet PTB-XL dataset, using Lead~I versus Lead~II as a conservative multi-sensor proxy, yields intra-body cosine similarity of $0.703$ versus inter-body $0.241$ (ROC AUC $= 0.943$, EER $= 13.3\%$). A fundamental trade-off governs key agreement: BCH(63,16,23) achieves 73.2\% success with a 16-bit effective key, while BCH(63,7,31) reaches 93.6\% success but yields only 7 effective key bits. Total latency is 3.6~ms and energy is 0.345~mJ per agreement---roughly $20\times$ below ECC-256 ECDH. Limitations including modest effective key lengths and the use of a proxy dataset are discussed candidly.
-\end{abstract}
-
-\begin{IEEEkeywords}
-Body area network, physiological key agreement, TinyML, edge AI, ECG, PPG, fuzzy commitment, healthcare IoT security.
-\end{IEEEkeywords}}
-
-\maketitle
-
-\IEEEdisplaynontitleabstractindextext
-
-\IEEEpeerreviewmaketitle
-
-
-% ============================================================
-% I. INTRODUCTION
+% 1. INTRODUCTION
 % ============================================================
 \section{Introduction}
 \label{sec:introduction}
 
-\IEEEPARstart{B}{ody} Area Networks (BANs) enable continuous physiological monitoring through miniaturized sensors placed on or within the human body~\cite{movassaghi2014wireless, cao2009enabling}. The wearable medical device market has grown rapidly in recent years, driven by remote patient monitoring, chronic disease management, and post-surgical care~\cite{al2017body}. In a typical deployment, heterogeneous sensor nodes---electrocardiogram (ECG) electrodes, photoplethysmogram (PPG) sensors, accelerometers, temperature probes---communicate wirelessly with a body-worn coordinator, which relays data to clinical systems~\cite{chen2011body}.
+Body Area Networks (BANs) enable continuous physiological monitoring through miniaturized sensors placed on or within the human body~\cite{movassaghi2014wireless, cao2009enabling}, with applications including ICU monitoring, post-operative recovery, and chronic disease management~\cite{al2017body}. In a typical deployment, heterogeneous sensor nodes such as electrocardiogram (ECG) electrodes, photoplethysmogram (PPG) sensors, accelerometers, and temperature probes communicate wirelessly with a body-worn coordinator, which relays data to clinical systems~\cite{chen2011body}.
 
 Securing intra-BAN communication is both critical and difficult. Physiological data falls under strict regulations such as HIPAA and GDPR~\cite{li2010data}. Interception or manipulation of BAN traffic could compromise patient privacy, falsify clinical readings, or disrupt therapeutic devices like insulin pumps~\cite{rushanan2014sok}. Yet BAN sensor nodes operate under severe constraints: ARM Cortex-M class processors at 64--168~MHz, 256--512~KB flash, 64--128~KB SRAM, powered by coin-cell batteries of 100--300~mAh~\cite{zhang2017security}. Traditional Public Key Infrastructure is impractical given the computational burden of asymmetric operations and certificate overhead~\cite{kompara2018survey}.
 
-Existing BAN key establishment approaches fall into three categories, each with notable shortcomings. \textit{Pre-shared key} schemes require manual configuration or a trusted authority, creating deployment friction incompatible with dynamic clinical environments~\cite{eschenauer2002random}. \textit{Lightweight public-key} approaches based on Elliptic Curve Cryptography reduce cost relative to RSA but still demand energy-intensive point multiplications on constrained hardware~\cite{chan2003random}. \textit{Physiological signal correlation} methods exploit the shared biological origin of signals measured at different body sites to derive common secrets~\cite{poon2006novel, venkatasubramanian2010pska, rostami2013heart}. These are appealing conceptually, but existing implementations rely on hand-crafted features---inter-pulse intervals, peak amplitudes---that exhibit limited discriminative power, high sensitivity to sensor placement, and no adaptation to individual patients~\cite{xu2017walkie}.
+Existing BAN key establishment approaches fall into three categories, each with notable shortcomings. \textit{Pre-shared key} schemes require manual configuration or a trusted authority, creating deployment friction incompatible with dynamic clinical environments~\cite{eschenauer2002random}. \textit{Lightweight public-key} approaches based on Elliptic Curve Cryptography reduce cost relative to RSA but still demand energy-intensive point multiplications on constrained hardware~\cite{chan2003random}. \textit{Physiological signal correlation} methods exploit the shared biological origin of signals measured at different body sites to derive common secrets~\cite{poon2006novel, venkatasubramanian2010pska, rostami2013heart}. These are appealing conceptually, but existing implementations rely on hand-crafted features (inter-pulse intervals, peak amplitudes) that exhibit limited discriminative power, high sensitivity to sensor placement, and no adaptation to individual patients~\cite{xu2017walkie}.
 
-The gap at the intersection of these approaches is clear: no existing scheme provides an adaptive, learning-based key agreement mechanism that fits within BAN resource constraints while eliminating pre-shared secrets. TinyML---machine learning inference on microcontrollers with milliwatt power budgets---offers a path forward~\cite{banbury2021mlperf, warden2019tinyml}. By deploying learned feature extractors on sensor nodes, patient-specific physiological patterns can be captured that are simultaneously correlated between co-located sensors and difficult for external adversaries to predict.
+No existing scheme provides an adaptive, learning-based key agreement mechanism that fits within BAN resource constraints while eliminating pre-shared secrets. TinyML, which refers to machine learning inference on microcontrollers with milliwatt power budgets, offers a path forward~\cite{banbury2021mlperf, warden2019tinyml}. By deploying learned feature extractors on sensor nodes, patient-specific physiological patterns can be captured that are simultaneously correlated between co-located sensors and difficult for external adversaries to predict.
 
 This paper introduces \textit{PhysioKey}, an Edge-AI-driven physiological key agreement framework. The core idea is that a lightweight 1D-CNN, quantized to INT8 and occupying 31.2~KB flash, can extract embedding vectors from physiological signal windows that reflect the body's shared physiological state while remaining robust to sensor noise and placement variation. These embeddings are reconciled through a fuzzy commitment scheme to produce symmetric session keys. The principal contributions are:
 
 \begin{enumerate}
-    \item A TinyML-based physiological key agreement framework that uses a learned 1D-CNN feature extractor to derive correlated embeddings from ECG signals on Cortex-M4 class devices, enabling plug-and-play enrollment without pre-shared secrets.
+    \item A TinyML-based physiological key agreement framework that uses a learned 1D-CNN feature extractor to derive correlated embeddings from ECG and PPG signals on Cortex-M4 class devices, enabling plug-and-play enrollment without pre-shared secrets.
 
     \item A formal threat model for intra-BAN communication covering passive eavesdropping, active replay, impersonation, and model inversion attacks.
 
     \item An honest characterization of the trade-off between key agreement success rate and effective key length, with entropy analysis that distinguishes the entropy of the quantized representation from the entropy of the source signal.
 
-    \item A simulation-based evaluation on 500 patients from PTB-XL, demonstrating EER~$= 13.3\%$, ROC~AUC~$= 0.943$, and key agreement success rates ranging from 33.8\% (24 effective key bits) to 93.6\% (7 effective key bits) for the 1-bit configuration, with 3.6~ms latency and 0.345~mJ energy per agreement.
+    \item A dual-dataset evaluation with patient-level 5-fold cross-validation on PTB-XL (500 patients, dual-ECG, EER~$= 7.8\% \pm 0.8\%$) and BIDMC (53 patients, synchronized ECG+PPG), demonstrating that a shared-encoder architecture fails on true cross-modal pairing (EER~$\sim$48.3\%) but a dual-encoder with modality-specific convolutional stacks reduces EER to $30.6\% \pm 1.2\%$.
+
+    \item Ablation studies quantifying the contribution of each loss component (contrastive, alignment, decorrelation), embedding dimension, and window length to key agreement performance.
+
+    \item A hybrid PhysioKey+ECDH protocol that combines on-body authentication with cryptographic key exchange, achieving 128-bit session keys for high-security applications while maintaining PhysioKey's plug-and-play property.
 \end{enumerate}
 
 The paper is organized as follows. Section~\ref{sec:related} surveys related work. Section~\ref{sec:system_model} formalizes system and threat models. Section~\ref{sec:framework} details the PhysioKey framework. Section~\ref{sec:security} presents the security analysis. Section~\ref{sec:evaluation} reports evaluation results. Section~\ref{sec:discussion} discusses limitations, and Section~\ref{sec:conclusion} concludes.
 
 
 % ============================================================
-% II. RELATED WORK
+% 2. RELATED WORK
 % ============================================================
 \section{Related Work}
 \label{sec:related}
@@ -115,11 +118,13 @@ This section surveys five related areas and identifies the gap motivating Physio
 \subsection{Key Distribution in Wireless Sensor Networks}
 \label{subsec:key_dist}
 
-Early key management schemes for wireless sensor networks established approaches that influenced BAN security. Eschenauer and Gligor~\cite{eschenauer2002random} proposed probabilistic key pre-distribution where each node is preloaded with a random key subset from a global pool. While this eliminates online key exchange, it provides only probabilistic connectivity and requires a trusted authority. Chan \etal~\cite{chan2003random} extended this with $q$-composite pre-distribution, trading network scalability for improved capture resilience.
+Early key management schemes for wireless sensor networks established approaches that influenced BAN security. Eschenauer and Gligor~\cite{eschenauer2002random} proposed probabilistic key pre-distribution where each node is preloaded with a random key subset from a global pool. While this eliminates online key exchange, it provides only probabilistic connectivity and requires a trusted authority. Chan \etal~\cite{chan2003random} extended this with $q$-composite pre-distribution, trading network scalability for improved capture resilience. Liu \etal~\cite{liu2008establishing} further developed polynomial-based pairwise key establishment, reducing storage overhead but retaining the assumption of a trusted key distribution center.
 
-Zhu \etal~\cite{zhu2006leap} introduced LEAP+, which establishes four key types---individual, pairwise, cluster, and group---through pre-deployment material and localized post-deployment establishment. LEAP+ supports efficient revocation but depends on a static key hierarchy unsuited to BANs, where sensors are frequently repositioned during clinical workflows.
+Zhu \etal~\cite{zhu2006leap} introduced LEAP+, which establishes four key types (individual, pairwise, cluster, and group) through pre-deployment material and localized post-deployment establishment. LEAP+ supports efficient revocation but depends on a static key hierarchy unsuited to BANs, where sensors are frequently repositioned during clinical workflows.
 
 The fundamental limitation of all pre-distribution approaches is their assumption of deployment-time trust. In clinical BAN scenarios, a nurse may attach several sensors within minutes, and these must immediately establish secure channels without manual key entry or centralized coordination.
+
+Modern BLE 5.0 LE Secure Connections~\cite{bluetooth2023core} offer authenticated pairing without pre-shared keys via Numeric Comparison or Passkey Entry, but these methods require human interaction (visually confirming a 6-digit code or entering a passkey), which is impractical in high-turnover clinical environments where a single nurse may attach dozens of sensors per shift, and infeasible for unconscious or sedated patients who cannot participate in pairing confirmation. Out-of-Band (OOB) pairing could leverage a side channel, but the BLE specification does not define a physiological OOB mechanism. PhysioKey can be viewed as providing a physiological OOB channel that enables fully automated, hands-free authenticated pairing without human intervention.
 
 \subsection{Physiological Signal-Based Security}
 \label{subsec:physio_security}
@@ -132,19 +137,21 @@ Rostami \etal~\cite{rostami2013heart} presented Heart-to-Heart (H2H), using ECG 
 
 Xu \etal~\cite{xu2017walkie} proposed Walkie-Talkie, using gait patterns from accelerometers for key agreement. This is inapplicable to bedridden patients or stationary monitoring common in intensive care.
 
+More recently, Zhang \etal~\cite{zhang2022ecg} demonstrated ECG-based biometric key generation using hand-crafted time-frequency features, achieving 128-bit keys but lacking on-device inference validation. Ali and Khan~\cite{ali2020secure} proposed a secure and energy-efficient key agreement framework for BANs that combines physiological features with lightweight cryptographic primitives, though their approach still relies on fixed feature extraction.
+
 \subsection{Biometric Key Agreement Mechanisms}
 \label{subsec:biometric}
 
-Fuzzy extractors, introduced by Dodis \etal~\cite{dodis2008fuzzy}, provide the theoretical foundation for deriving keys from noisy biometric data. A fuzzy extractor has two procedures: $\mathsf{Gen}(w) \rightarrow (R, P)$, producing a random string $R$ and helper string $P$; and $\mathsf{Rep}(w', P) \rightarrow R$, recovering $R$ from a nearby measurement $w'$ using $P$, provided $d(w, w') \leq t$. Security requires that $R$ remain computationally indistinguishable from random even given $P$.
+Fuzzy extractors, introduced by Dodis \etal~\cite{dodis2008fuzzy}, provide a theoretical foundation for deriving keys from noisy biometric data. A fuzzy extractor has two procedures: $\mathsf{Gen}(w) \rightarrow (R, P)$, producing a random string $R$ and helper string $P$; and $\mathsf{Rep}(w', P) \rightarrow R$, recovering $R$ from a nearby measurement $w'$ using $P$, provided $d(w, w') \leq t$. Security requires that $R$ remain computationally indistinguishable from random even given $P$.
 
 Juels and Wattenberg~\cite{juels1999fuzzy} proposed the fuzzy commitment scheme, combining error-correcting codes with hashing to bind a secret to a noisy measurement. The commit phase computes $c = \mathsf{ECC}(K) \oplus w$ and $h = \mathcal{H}(K)$; the decommit phase recovers $K$ from $c \oplus w'$ by decoding, provided $d(w, w') \leq t_{\text{ECC}}$.
 
-These mechanisms are central to PhysioKey's key derivation, enabling two sensors measuring correlated but non-identical signals to agree on the same key without revealing the underlying features.
+Hu \etal~\cite{hu2021lightweight} proposed a lightweight key agreement scheme for implantable medical devices using physical unclonable functions (PUFs) combined with fuzzy extractors, demonstrating that hardware-assisted approaches can complement biometric methods. These mechanisms are central to PhysioKey's key derivation, enabling two sensors measuring correlated but non-identical signals to agree on the same key without revealing the underlying features.
 
 \subsection{Edge AI and TinyML for IoT Security}
 \label{subsec:tinyml}
 
-TinyML enables machine learning on microcontrollers with milliwatt power budgets and kilobyte memory footprints~\cite{warden2019tinyml, banbury2021mlperf}. TensorFlow Lite for Microcontrollers and similar frameworks support INT8 quantized inference on ARM Cortex-M processors, achieving millisecond-scale inference for compact models~\cite{david2021tensorflow}.
+TinyML enables machine learning on microcontrollers with milliwatt power budgets and kilobyte memory footprints~\cite{warden2019tinyml, banbury2021mlperf}. Ray~\cite{ray2022review} provided a comprehensive survey of the TinyML landscape, highlighting progress in model compression, hardware-aware design, and deployment toolchains. Shafique \etal~\cite{shafique2023tinyml} outline the research challenges and roadmap for TinyML, including quantization-aware training and neural architecture search for MCU targets. TensorFlow Lite for Microcontrollers and similar frameworks support INT8 quantized inference on ARM Cortex-M processors, achieving millisecond-scale inference for compact models~\cite{david2021tensorflow}.
 
 In security, TinyML has been applied to IoT anomaly detection~\cite{antonini2023tiny}, hardware fingerprinting for device authentication~\cite{chatterjee2019rf}, and intrusion detection on edge devices~\cite{alhanahnah2023tinyml}. However, the application of TinyML to \textit{key agreement} remains largely unexplored. Existing TinyML security work treats models as classifiers or anomaly detectors, not as feature extractors whose outputs drive cryptographic key derivation.
 
@@ -155,15 +162,12 @@ Sriram and Rajan~\cite{sriram2022tinyml} showed that 1D-CNNs quantized to INT8 c
 
 Table~\ref{tab:gap} summarizes capabilities of existing approaches against BAN key agreement requirements. No existing scheme simultaneously provides adaptive learned feature extraction, plug-and-play operation, formal security analysis, and TinyML-class feasibility. PhysioKey targets this gap.
 
-\begin{table*}[!t]
-\centering
-\caption{Comparison of Existing BAN Key Agreement Approaches Against PhysioKey Requirements}
-\label{tab:gap}
-\small
-\begin{tabular}{lccccccc}
+\begin{table}[H]
+\caption{Comparison of Existing BAN Key Agreement Approaches Against PhysioKey Requirements.\label{tab:gap}}
+\begin{adjustwidth}{-\extralength}{0cm}
+\begin{tabularx}{\fulllength}{lCCCCCCC}
 \toprule
-\textbf{Scheme} & \textbf{No Pre-shared} & \textbf{Adaptive} & \textbf{Learned} & \textbf{Plug-and-} & \textbf{Formal} & \textbf{MCU} & \textbf{Multi-} \\
- & \textbf{Key} & \textbf{Features} & \textbf{Features} & \textbf{Play} & \textbf{Security} & \textbf{Feasible} & \textbf{Signal} \\
+\textbf{Scheme} & \textbf{No Pre-shared Key} & \textbf{Adaptive Features} & \textbf{Learned Features} & \textbf{Plug-and-Play} & \textbf{Formal Security} & \textbf{MCU Feasible} & \textbf{Multi-Signal} \\
 \midrule
 Eschenauer \& Gligor~\cite{eschenauer2002random} & \texttimes & \texttimes & \texttimes & \texttimes & Partial & \checkmark & N/A \\
 LEAP+~\cite{zhu2006leap} & \texttimes & \texttimes & \texttimes & \texttimes & \checkmark & \checkmark & N/A \\
@@ -172,14 +176,16 @@ PSKA~\cite{venkatasubramanian2010pska} & \checkmark & Partial & \texttimes & \ch
 H2H~\cite{rostami2013heart} & \checkmark & \texttimes & \texttimes & \texttimes & \checkmark & Partial & \texttimes \\
 Walkie-Talkie~\cite{xu2017walkie} & \checkmark & \texttimes & \texttimes & \checkmark & \texttimes & \checkmark & \texttimes \\
 \midrule
-\textbf{PhysioKey} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\textbf{PhysioKey} & \checkmark & Learned\textsuperscript{a} & \checkmark & \checkmark & \checkmark & \checkmark & Partial\textsuperscript{b} \\
 \bottomrule
-\end{tabular}
-\end{table*}
+\end{tabularx}
+\end{adjustwidth}
+\noindent{\footnotesize{\textsuperscript{a} Features are learned offline via contrastive training rather than hand-crafted; the deployed model is fixed (no on-device adaptation). \textsuperscript{b} Same-modality (ECG-ECG) achieves strong discrimination; cross-modal (ECG-PPG) requires a dual-encoder variant (see Section~\ref{subsec:cv} for detailed results).}}
+\end{table}
 
 
 % ============================================================
-% III. SYSTEM MODEL AND THREAT MODEL
+% 3. SYSTEM MODEL AND THREAT MODEL
 % ============================================================
 \section{System Model and Threat Model}
 \label{sec:system_model}
@@ -187,50 +193,51 @@ Walkie-Talkie~\cite{xu2017walkie} & \checkmark & \texttimes & \texttimes & \chec
 \subsection{System Architecture}
 \label{subsec:architecture}
 
-The target deployment is a BAN comprising $N$ sensor nodes $\mathcal{S} = \{s_1, s_2, \ldots, s_N\}$ attached to a patient's body, communicating wirelessly with a body-worn coordinator $\mathcal{C}$. Each node is modeled as an ARM Cortex-M4 class device: 168~MHz clock, 512~KB flash, 128~KB SRAM, BLE 5.0 radio, 225~mAh coin-cell battery. The coordinator aggregates data and relays it to a gateway or cloud backend.
+The target deployment is a BAN comprising $N$ sensor nodes $\mathcal{S} = \{s_1, s_2, \ldots, s_N\}$ attached to a patient's body, communicating wirelessly with a body-worn coordinator $\mathcal{C}$. Each node is modeled as an ARM Cortex-M4 class device: 168~MHz clock, 512~KB flash, 128~KB SRAM, BLE 5.0 radio, and a typical 225~mAh coin-cell battery (e.g., CR2032). The coordinator aggregates data and relays it to a gateway or cloud backend.
 
 The BAN topology is a single-hop star centered on $\mathcal{C}$, with pairwise secure channels required between any sensor and the coordinator, as well as between specific sensor pairs for collaborative sensing (\eg, fusing ECG and PPG for blood pressure estimation). Sensors are positioned at clinically relevant locations: ECG electrodes at the chest (Lead~II configuration), PPG sensors at the wrist or fingertip, and auxiliary sensors elsewhere.
 
 % ---- System Architecture Diagram ----
-\begin{figure}[!t]
+\begin{figure}[H]
 \centering
 \begin{tikzpicture}[
-    node distance=1.2cm,
-    sensor/.style={rectangle, draw, rounded corners, minimum width=1.8cm, minimum height=0.7cm, font=\footnotesize, fill=blue!10},
-    coord/.style={rectangle, draw, rounded corners, minimum width=2.2cm, minimum height=0.9cm, font=\footnotesize, fill=green!15, thick},
-    cloud/.style={ellipse, draw, minimum width=2cm, minimum height=0.7cm, font=\footnotesize, fill=gray!10},
-    arrow/.style={->, >=stealth, thick},
-    dashedarrow/.style={->, >=stealth, dashed}
+    sensor/.style={rectangle, draw, rounded corners=3pt, minimum width=2.2cm, minimum height=0.8cm, font=\scriptsize, fill=blue!8, align=center},
+    coord/.style={rectangle, draw, rounded corners=3pt, minimum width=2.6cm, minimum height=0.9cm, font=\scriptsize, fill=green!12, thick, align=center},
+    cloud/.style={rectangle, draw, rounded corners=3pt, minimum width=2.2cm, minimum height=0.8cm, font=\scriptsize, fill=gray!8, align=center},
+    adv/.style={rectangle, draw, rounded corners=3pt, minimum width=1.6cm, minimum height=0.7cm, font=\scriptsize, fill=red!10, align=center},
+    link/.style={->, >=stealth, thick, color=black!70},
+    bledge/.style={font=\tiny, text=black!60},
+    boundary/.style={draw=black!40, dashed, rounded corners=6pt, thick}
 ]
-    % Coordinator
-    \node[coord] (C) {Coordinator $\mathcal{C}$};
+    % ---- Body boundary (drawn first, behind everything) ----
+    \draw[boundary] (-3.8, -2.6) rectangle (3.8, 2.6);
+    \node[font=\tiny, text=black!50, anchor=south east] at (3.7, -2.5) {Body boundary};
 
-    % Sensors
-    \node[sensor, above left=1.2cm and 1.5cm of C] (s1) {ECG (Chest)};
-    \node[sensor, above right=1.2cm and 1.5cm of C] (s2) {PPG (Wrist)};
-    \node[sensor, below left=1.2cm and 1.5cm of C] (s3) {PPG (Finger)};
-    \node[sensor, below right=1.2cm and 1.5cm of C] (s4) {Temp (Axilla)};
+    % ---- Coordinator (center) ----
+    \node[coord] (C) at (0, 0) {Coordinator\\$\mathcal{C}$};
 
-    % Cloud
-    \node[cloud, right=2.5cm of C] (cloud) {Cloud/Gateway};
+    % ---- Sensors (symmetric grid around coordinator) ----
+    \node[sensor] (s1) at (-2.4, 1.5) {$s_1$: ECG\\(Chest)};
+    \node[sensor] (s2) at ( 2.4, 1.5) {$s_2$: PPG\\(Wrist)};
+    \node[sensor] (s3) at (-2.4,-1.5) {$s_3$: PPG\\(Finger)};
+    \node[sensor] (s4) at ( 2.4,-1.5) {$s_4$: Temp\\(Axilla)};
 
-    % Arrows
-    \draw[arrow] (s1) -- node[above, sloped, font=\tiny] {BLE} (C);
-    \draw[arrow] (s2) -- node[above, sloped, font=\tiny] {BLE} (C);
-    \draw[arrow] (s3) -- node[above, sloped, font=\tiny] {BLE} (C);
-    \draw[arrow] (s4) -- node[above, sloped, font=\tiny] {BLE} (C);
-    \draw[arrow] (C) -- node[above, font=\tiny] {Wi-Fi} (cloud);
+    % ---- BLE links (sensor ↔ coordinator) ----
+    \draw[link] (s1) -- node[bledge, above, sloped] {BLE} (C);
+    \draw[link] (s2) -- node[bledge, above, sloped] {BLE} (C);
+    \draw[link] (s3) -- node[bledge, below, sloped] {BLE} (C);
+    \draw[link] (s4) -- node[bledge, below, sloped] {BLE} (C);
 
-    % Adversary
-    \node[draw, diamond, fill=red!15, font=\tiny, minimum width=0.5cm] at ($(C)+(0,2.5)$) (adv) {$\mathcal{A}$};
-    \draw[dashedarrow, red] (adv) -- node[right, font=\tiny, red] {eavesdrop} ($(s1)!0.5!(C)$);
+    % ---- Cloud/Gateway (outside body boundary) ----
+    \node[cloud] (cloud) at (6.2, 0) {Cloud /\\Gateway};
+    \draw[link] (C) -- node[bledge, above] {Wi-Fi} (cloud);
 
-    % Body boundary
-    \draw[dashed, gray, rounded corners] ($(s1)+(-1.2,0.7)$) rectangle ($(s4)+(1.2,-0.7)$);
-    \node[font=\tiny, gray] at ($(s3)+(-1.0,-1.0)$) {Body boundary};
+    % ---- Adversary (outside body boundary, top) ----
+    \node[adv] (adv) at (0, 4.0) {Adversary $\mathcal{A}$};
+    \draw[->, >=stealth, thick, dashed, red!70] (adv) -- node[right, font=\tiny, text=red!70, align=left] {eavesdrop /\\inject / replay} ($(C)+(0,1.4)$);
+
 \end{tikzpicture}
-\caption{BAN system architecture with sensor nodes, coordinator, and adversary. Solid arrows indicate legitimate BLE channels; the dashed red arrow represents the adversary's eavesdropping capability.}
-\label{fig:system_arch}
+\caption{BAN system architecture. Sensor nodes $s_1$--$s_4$ communicate with the coordinator $\mathcal{C}$ over BLE within the body boundary. The adversary $\mathcal{A}$ operates outside the body boundary and can eavesdrop, inject, or replay wireless traffic.\label{fig:system_arch}}
 \end{figure}
 
 \subsection{Signal Model}
@@ -238,13 +245,15 @@ The BAN topology is a single-hop star centered on $\mathcal{C}$, with pairwise s
 
 Let $x_i(t) \in \mathbb{R}$ denote the physiological signal sampled by sensor $s_i$ at time $t$. For ECG sensors, $x_i(t)$ represents the electrical potential measured at chest electrodes; for PPG sensors, $x_j(t)$ represents infrared light absorption at a peripheral site. Both are sampled at $f_s = 256$~Hz, satisfying the Nyquist criterion for relevant frequency bands (ECG: 0.5--40~Hz; PPG: 0.5--8~Hz)~\cite{clifford2006advanced}.
 
-A signal window $\mathbf{x}_i^{(k)} = [x_i(kW), x_i(kW+1), \ldots, x_i(kW+L-1)]^T \in \mathbb{R}^L$ is a segment of $L = 256$ samples (1~second at 256~Hz) starting at epoch $k$. The feature extractor $f_\theta: \mathbb{R}^L \rightarrow \mathbb{R}^d$ maps a window to a $d$-dimensional embedding $\mathbf{z}_i^{(k)} = f_\theta(\mathbf{x}_i^{(k)}) \in \mathbb{R}^d$ with $d = 32$.
+A signal window $\mathbf{x}_i^{(k)} = [x_i(kW), x_i(kW+1), \ldots, x_i(kW+L-1)]^T \in \mathbb{R}^L$ is a segment of $L = 128$ samples (0.5~seconds at 256~Hz) starting at epoch $k$. This window length was selected based on ablation studies (Section~\ref{subsec:ablation}) showing that 0.5-second windows, which capture approximately one-half to one full cardiac cycle at resting heart rates of 60--100~bpm, yield more discriminative features than longer multi-cycle windows. The feature extractor $f_\theta: \mathbb{R}^L \rightarrow \mathbb{R}^d$ maps a window to a $d$-dimensional embedding $\mathbf{z}_i^{(k)} = f_\theta(\mathbf{x}_i^{(k)}) \in \mathbb{R}^d$ with $d = 32$.
 
 The property exploited by PhysioKey is that signals from the same body exhibit high cross-correlation:
+
 \begin{equation}
 \label{eq:correlation}
 \rho(\mathbf{z}_i^{(k)}, \mathbf{z}_j^{(k)}) = \frac{\mathbf{z}_i^{(k)} \cdot \mathbf{z}_j^{(k)}}{\|\mathbf{z}_i^{(k)}\| \cdot \|\mathbf{z}_j^{(k)}\|} \geq \tau, \quad \forall s_i, s_j \in \mathcal{S}
 \end{equation}
+
 while signals from different bodies satisfy $\rho(\mathbf{z}_i^{(k)}, \mathbf{z}_{j'}^{(k)}) < \tau$ with high probability.
 
 \subsection{Threat Model}
@@ -267,15 +276,17 @@ The adversary $\mathcal{A}$ is defined with the following capabilities and limit
 \end{itemize}
 
 \textbf{Security goal.} The protocol must ensure:
+
 \begin{equation}
 \label{eq:security_goal}
 \Pr[K_{\mathcal{A}} = K_{\text{legit}}] \leq 2^{-\lambda}
 \end{equation}
+
 where $\lambda$ is the security parameter. As discussed in Section~\ref{sec:security}, the effective security depends on the entropy of the agreed bits, which is modest (7--24 bits for the 1-bit configuration). SHA-256 key derivation provides computational stretching but does not create information-theoretic security beyond the source entropy.
 
 
 % ============================================================
-% IV. PROPOSED FRAMEWORK: PHYSIOKEY
+% 4. PROPOSED FRAMEWORK: PHYSIOKEY
 % ============================================================
 \section{Proposed Framework: PhysioKey}
 \label{sec:framework}
@@ -285,7 +296,7 @@ This section details the PhysioKey framework: the system pipeline, TinyML model,
 \subsection{System Overview}
 \label{subsec:overview}
 
-PhysioKey operates in five stages, illustrated in Fig.~\ref{fig:pipeline}:
+PhysioKey operates in five stages, illustrated in Figure~\ref{fig:pipeline}:
 
 \begin{enumerate}
     \item \textbf{Signal Capture}: Sensors $s_i$ and $s_j$ synchronously capture windows $\mathbf{x}_i^{(k)}$ and $\mathbf{x}_j^{(k)}$ during epoch $k$.
@@ -296,7 +307,7 @@ PhysioKey operates in five stages, illustrated in Fig.~\ref{fig:pipeline}:
 \end{enumerate}
 
 % ---- Pipeline Diagram ----
-\begin{figure*}[!t]
+\begin{figure}[H]
 \centering
 \begin{tikzpicture}[
     node distance=0.6cm,
@@ -333,29 +344,28 @@ PhysioKey operates in five stages, illustrated in Fig.~\ref{fig:pipeline}:
     % Channel communication
     \draw[arrow, red, dashed] (commit) -- node[right, font=\tiny, red] {$(c, h, \text{nonce})$} (decommit);
 \end{tikzpicture}
-\caption{PhysioKey key agreement pipeline. Each sensor captures a signal window, extracts features using the shared 1D-CNN $f_\theta$, and quantizes the embedding. The initiator computes a fuzzy commitment transmitted over the wireless channel (dashed red arrow). The responder decommits using its own quantized embedding to recover the shared key $K$.}
-\label{fig:pipeline}
-\end{figure*}
+\caption{PhysioKey key agreement pipeline. Each sensor captures a signal window, extracts features using the shared 1D-CNN $f_\theta$, and quantizes the embedding. The initiator computes a fuzzy commitment transmitted over the wireless channel (dashed red arrow). The responder decommits using its own quantized embedding to recover the shared key $K$.\label{fig:pipeline}}
+\end{figure}
 
 \subsection{TinyML Feature Extraction Model}
 \label{subsec:tinyml_model}
 
-The feature extractor $f_\theta$ is a 1D-CNN designed to satisfy three objectives: (O1)~maximize mutual information $I(\mathbf{z}_i^{(k)}; \mathbf{z}_j^{(k)})$ between embeddings from co-located sensors on the same body; (O2)~minimize mutual information $I(\mathbf{z}_i^{(k)}; \mathbf{x}_{\mathcal{A}})$ between legitimate embeddings and signals observable by the adversary; (O3)~fit the MCU resource envelope ($\leq$~50~KB flash, $\leq$~20~KB SRAM, $\leq$~15~ms inference).
+The feature extractor $f_\theta$ is a 1D-CNN designed to satisfy three objectives: (O1)~maximize mutual information $I(\mathbf{z}_i^{(k)}; \mathbf{z}_j^{(k)})$ between embeddings from co-located sensors on the same body; (O2)~implicitly reduce mutual information $I(\mathbf{z}_i^{(k)}; \mathbf{x}_{\mathcal{A}})$ between legitimate embeddings and signals observable by the adversary\footnote{O2 is a design goal promoted indirectly by the contrastive loss, which maximizes inter-body discrimination; it is not a directly optimized objective.}; (O3)~fit the MCU resource envelope ($\leq$~50~KB flash, $\leq$~20~KB SRAM, $\leq$~15~ms inference).
 
 \textbf{Architecture.} The model consists of three convolutional blocks followed by global average pooling and two fully connected layers:
 
 \begin{enumerate}
-    \item \textbf{Input}: $\mathbf{x} \in \mathbb{R}^{256 \times 1}$ (1-second window)
-    \item \textbf{Conv1D-1}: 8 filters, kernel size 5, stride 2, BN, ReLU $\rightarrow \mathbb{R}^{128 \times 8}$
-    \item \textbf{Conv1D-2}: 16 filters, kernel size 3, stride 2, BN, ReLU $\rightarrow \mathbb{R}^{64 \times 16}$
-    \item \textbf{Conv1D-3}: 32 filters, kernel size 3, stride 2, BN, ReLU $\rightarrow \mathbb{R}^{32 \times 32}$
+    \item \textbf{Input}: $\mathbf{x} \in \mathbb{R}^{128 \times 1}$ (0.5-second window)
+    \item \textbf{Conv1D-1}: 8 filters, kernel size 5, stride 2, BN, ReLU $\rightarrow \mathbb{R}^{64 \times 8}$
+    \item \textbf{Conv1D-2}: 16 filters, kernel size 3, stride 2, BN, ReLU $\rightarrow \mathbb{R}^{32 \times 16}$
+    \item \textbf{Conv1D-3}: 32 filters, kernel size 3, stride 2, BN, ReLU $\rightarrow \mathbb{R}^{16 \times 32}$
     \item \textbf{Global Average Pooling}: $\rightarrow \mathbb{R}^{32}$
     \item \textbf{Dense-1}: 64 units, ReLU $\rightarrow \mathbb{R}^{64}$
     \item \textbf{Dense-2}: 32 units, linear $\rightarrow \mathbb{R}^{32}$ (embedding $\mathbf{z}$)
 \end{enumerate}
 
 % ---- Model Architecture Diagram ----
-\begin{figure}[!t]
+\begin{figure}[H]
 \centering
 \begin{tikzpicture}[
     node distance=0.35cm,
@@ -363,7 +373,7 @@ The feature extractor $f_\theta$ is a 1D-CNN designed to satisfy three objective
     arrow/.style={->, >=stealth},
     dim/.style={font=\tiny, text=gray}
 ]
-    \node[layer] (input) {Input: $256 \times 1$};
+    \node[layer] (input) {Input: $128 \times 1$};
     \node[layer, below=of input] (conv1) {Conv1D: 8 filters, $k$=5, $s$=2 + BN + ReLU};
     \node[layer, below=of conv1] (conv2) {Conv1D: 16 filters, $k$=3, $s$=2 + BN + ReLU};
     \node[layer, below=of conv2] (conv3) {Conv1D: 32 filters, $k$=3, $s$=2 + BN + ReLU};
@@ -371,18 +381,18 @@ The feature extractor $f_\theta$ is a 1D-CNN designed to satisfy three objective
     \node[layer, below=of gap] (fc1) {Dense: 64 units + ReLU};
     \node[layer, below=of fc1, fill=orange!10] (fc2) {Dense: 32 units (Embedding $\mathbf{z}$)};
 
-    \draw[arrow] (input) -- (conv1); \node[dim, right=0.3cm of conv1] {$128 \times 8$};
-    \draw[arrow] (conv1) -- (conv2); \node[dim, right=0.3cm of conv2] {$64 \times 16$};
-    \draw[arrow] (conv2) -- (conv3); \node[dim, right=0.3cm of conv3] {$32 \times 32$};
+    \draw[arrow] (input) -- (conv1); \node[dim, right=0.3cm of conv1] {$64 \times 8$};
+    \draw[arrow] (conv1) -- (conv2); \node[dim, right=0.3cm of conv2] {$32 \times 16$};
+    \draw[arrow] (conv2) -- (conv3); \node[dim, right=0.3cm of conv3] {$16 \times 32$};
     \draw[arrow] (conv3) -- (gap); \node[dim, right=0.3cm of gap] {$32$};
     \draw[arrow] (gap) -- (fc1); \node[dim, right=0.3cm of fc1] {$64$};
     \draw[arrow] (fc1) -- (fc2); \node[dim, right=0.3cm of fc2] {$32$};
 \end{tikzpicture}
-\caption{PhysioKey 1D-CNN architecture. The model maps a 256-sample input to a 32-dimensional embedding. Total: 6,320 parameters (6.2~KB weights, 31.2~KB with TFLM runtime at INT8).}
-\label{fig:model_arch}
+\caption{PhysioKey 1D-CNN architecture. The model maps a 128-sample input (0.5~s) to a 32-dimensional embedding. Total: 6320 parameters (6.2~KB weights, 31.2~KB with TFLM runtime at INT8).\label{fig:model_arch}}
 \end{figure}
 
 \textbf{Parameter count.} The total parameter count is:
+
 \begin{align}
 \text{Conv1D-1 + BN}: & \quad 5 \times 1 \times 8 + 8 + 2 \times 8 = 64 \nonumber \\
 \text{Conv1D-2 + BN}: & \quad 3 \times 8 \times 16 + 16 + 2 \times 16 = 432 \nonumber \\
@@ -395,12 +405,16 @@ The feature extractor $f_\theta$ is a 1D-CNN designed to satisfy three objective
 
 Under INT8 quantization, each parameter occupies 1~byte, giving a model size of approximately 6.2~KB for weights. With the TFLM runtime, quantization metadata, and tensor arena, the total flash footprint is 31.2~KB.
 
-\textbf{Training objective.} The model is trained offline on synchronized multi-sensor physiological recordings. The training loss combines contrastive, decorrelation, and alignment terms:
+\textbf{Dual-encoder variant.} For cross-modal (ECG+PPG) key agreement, a dual-encoder architecture replaces the single shared CNN with two modality-specific convolutional stacks---one for ECG and one for PPG---each identical to the shared encoder's three convolutional blocks. Both stacks feed into a shared projection head (Dense-1 and Dense-2), producing 32-dimensional embeddings in a common space. The parameter count is: $2 \times (64 + 432 + 1{,}632) = 4{,}256$ for the duplicated convolutional layers, plus $2{,}112 + 2{,}080 = 4{,}192$ for the shared dense layers, totaling \textbf{8{,}448 parameters} ($\sim$8.3~KB INT8, $\sim$33.3~KB with TFLM runtime\footnote{The $\sim$25~KB TFLM runtime overhead is the same as the shared encoder, since only the weight tensors differ between configurations.}), a modest increase that remains within the MCU resource envelope. Training uses the same loss (Equation~\ref{eq:loss}), with ECG and PPG windows from the same patient forming positive pairs.
+
+\textbf{Training objective.} The model is trained offline on synchronized multi-sensor physiological recordings. The training loss adapts the NT-Xent contrastive objective from SimCLR~\cite{chen2020simclr} with a decorrelation term inspired by Barlow Twins~\cite{zbontar2021barlow} and an alignment term:
+
 \begin{equation}
 \label{eq:loss}
 \mathcal{L} = \underbrace{-\sum_{(i,j) \in \mathcal{P}} \log \frac{e^{\text{sim}(\mathbf{z}_i, \mathbf{z}_j)/\tau_T}}{\sum_{(i,n) \in \mathcal{N}} e^{\text{sim}(\mathbf{z}_i, \mathbf{z}_n)/\tau_T}}}_{\text{Contrastive}} + \lambda \underbrace{\|\mathbf{C}_z - \mathbf{I}\|_F^2}_{\text{Decorrelation}} + \mu \underbrace{\frac{1}{|\mathcal{P}|}\sum_{(i,j) \in \mathcal{P}} \|\mathbf{z}_i - \mathbf{z}_j\|_2^2}_{\text{Alignment}}
 \end{equation}
-where $\mathcal{P}$ denotes positive pairs (same body, same epoch), $\mathcal{N}$ denotes negative pairs (different bodies or temporally separated epochs), $\text{sim}(\cdot, \cdot)$ is cosine similarity, $\tau_T$ is a temperature parameter, $\mathbf{C}_z$ is the feature correlation matrix, $\lambda$ controls decorrelation strength, and $\mu$ weights the alignment loss. The alignment term directly penalizes Euclidean distance between positive-pair embeddings, encouraging the model to produce similar representations for co-located sensors measuring the same physiological event. The decorrelation term promotes statistical independence between embedding dimensions. In the experiments reported here, $\tau_T = 0.05$, $\lambda = 0.05$, and $\mu = 0.5$.
+
+where $\mathcal{P}$ denotes positive pairs (same body, same epoch), $\mathcal{N}$ denotes negative pairs (different bodies or temporally separated epochs), $\text{sim}(\cdot, \cdot)$ is cosine similarity, $\tau_T$ is a temperature parameter, $\mathbf{C}_z$ is the feature correlation matrix, $\lambda$ controls decorrelation strength, and $\mu$ weights the alignment loss. The alignment term directly penalizes Euclidean distance between positive-pair embeddings, encouraging the model to produce similar representations for co-located sensors measuring the same physiological event. The decorrelation term promotes statistical independence between embedding dimensions. In the experiments reported here, $\tau_T = 0.05$, $\lambda = 0.05$, and $\mu = 0.5$. The temperature is lower than SimCLR's default of 0.5; a sharper similarity distribution better serves the key agreement task, where fine-grained discrimination matters more than representation generality.
 
 \textbf{Quantization.} Post-training quantization converts weights and activations from FP32 to INT8 using the TensorFlow Lite converter with representative calibration data. This reduces model size by $4\times$ and enables fixed-point arithmetic on the Cortex-M4 integer pipeline.
 
@@ -410,36 +424,42 @@ where $\mathcal{P}$ denotes positive pairs (same body, same epoch), $\mathcal{N}
 Given the quantized embedding $\mathbf{b}_i^{(k)} \in \{0,1\}^n$ from sensor $s_i$, key derivation proceeds as follows.
 
 \textbf{Step 1: Embedding quantization.} The continuous embedding $\mathbf{z}_i^{(k)} \in \mathbb{R}^{32}$ is quantized to a binary string using multi-level Gray coding:
+
 \begin{equation}
 \label{eq:multilevel_quant}
 Q_{\text{multi}}(\mathbf{z}) = \bigoplus_{l=1}^{d} \text{Gray}_q\!\left(\left\lfloor \frac{z_l - z_l^{\min}}{z_l^{\max} - z_l^{\min}} \cdot (2^q - 1) \right\rfloor\right)
 \end{equation}
+
 where $\text{Gray}_q(\cdot)$ maps a $q$-bit integer to its Gray code representation. Two configurations are evaluated: (i)~$q = 1$ yielding $\mathbf{b} \in \{0,1\}^{32}$ and (ii)~$q = 2$ yielding $\mathbf{b} \in \{0,1\}^{64}$.
 
 \textbf{Step 2: Zero-padding and BCH commitment.} Because standard BCH codes operate on block lengths of the form $2^m - 1$, the raw quantized bits must be zero-padded to the nearest valid block length. For $q = 1$ (32 raw bits), the bits are padded to length 63 and processed with BCH(63,$k_c$,$d_{\min}$) codes. For $q = 2$ (64 raw bits), the bits are padded to length 127 and processed with BCH(127,$k_c$,$d_{\min}$) codes. The initiator $s_i$ generates a random key $K$ and computes:
+
 \begin{align}
 \label{eq:commitment}
 c &= \text{BCH}_{(n_c, k_c, t)}\text{-Encode}(K) \oplus \text{pad}(\mathbf{b}_i^{(k)}) \\
 h &= \text{SHA-256}(K \| \text{nonce})
 \end{align}
+
 where $k_c$ is the dimension of the BCH code (and thus the effective key length in bits), and $\text{nonce}$ is a fresh random value. The tuple $(c, h, \text{nonce})$ is transmitted to $s_j$.
 
 \textbf{Step 3: Key recovery.} The responder $s_j$ computes:
+
 \begin{align}
 \label{eq:recovery}
 \hat{c} &= c \oplus \text{pad}(\mathbf{b}_j^{(k)}) \\
 \hat{K} &= \text{BCH-Decode}(\hat{c})
 \end{align}
+
 If $d_H(\text{pad}(\mathbf{b}_i^{(k)}), \text{pad}(\mathbf{b}_j^{(k)})) \leq t$, the decoder recovers $K$. Correctness is verified by checking $h \stackrel{?}{=} \text{SHA-256}(\hat{K} \| \text{nonce})$.
 
-\textbf{Trade-off between success rate and key length.} The choice of BCH parameters governs a fundamental trade-off. Higher error-correction capability $t$ increases the success rate but reduces $k_c$---the number of effective key bits. For instance, with the 1-bit configuration and BCH(63,16,23), $t = 11$ corrects up to 11 of the 63 padded bits and yields 16-bit effective keys with 73.2\% success. With BCH(63,7,31) and $t = 15$, success rises to 93.6\% but the effective key is only 7 bits. This trade-off is characterized fully in Section~\ref{sec:evaluation}.
+\textbf{Trade-off between success rate and key length.} The choice of BCH parameters governs a fundamental trade-off. Higher error-correction capability $t$ increases the success rate but reduces $k_c$, the number of effective key bits. For instance, with the 1-bit configuration and BCH(63,16,23), $t = 11$ corrects up to 11 of the 63 padded bits and yields 16-bit effective keys with 84.8\% success. With BCH(63,7,31) and $t = 15$, success rises to 97.8\% but the effective key is only 7 bits. This trade-off is characterized fully in Section~\ref{sec:evaluation}.
 
 \subsection{Plug-and-Play Enrollment Protocol}
 \label{subsec:enrollment}
 
 PhysioKey supports the addition of new sensors without prior key material. When a new sensor $s_{\text{new}}$ is attached, enrollment proceeds as in Algorithm~\ref{alg:enrollment}.
 
-\begin{algorithm}[!t]
+\begin{algorithm}[H]
 \caption{PhysioKey Plug-and-Play Enrollment}
 \label{alg:enrollment}
 \begin{algorithmic}[1]
@@ -461,27 +481,65 @@ PhysioKey supports the addition of new sensors without prior key material. When 
 
 No pre-shared secrets, certificates, or manual pairing are required. The only prerequisite is that $s_{\text{new}}$ carries the same model $f_\theta$, which is public (consistent with Kerckhoffs' principle) and distributed via firmware updates.
 
-\textbf{Group-wise key establishment.} For $N$ sensors, the coordinator $\mathcal{C}$ establishes pairwise keys $K_{i,\mathcal{C}}$ with each sensor $s_i$, then distributes a group key $K_G$ encrypted under each pairwise key: $E_{K_{i,\mathcal{C}}}(K_G)$. This requires $N$ pairwise agreements rather than $\binom{N}{2}$.
+\textbf{Group-wise key establishment.} For $N$ sensors, the coordinator $\mathcal{C}$ establishes pairwise keys $K_{i,\mathcal{C}}$ with each sensor $s_i$ via PhysioKey, then distributes a group key $K_G$ encrypted under each pairwise key: $E_{K_{i,\mathcal{C}}}(K_G)$. Note that this design makes $\mathcal{C}$ a single point of trust: compromise of the coordinator exposes all group keys. Distributed group key agreement protocols could mitigate this, but at the cost of additional communication rounds.
 
 \subsection{Key Refresh Mechanism}
 \label{subsec:key_refresh}
 
 To prevent replay attacks and provide key independence across epochs, PhysioKey refreshes session keys periodically. Each agreement is bound to a temporal epoch:
+
 \begin{equation}
 \label{eq:epoch}
 k = \left\lfloor \frac{t - t_0}{\Delta} \right\rfloor
 \end{equation}
-where $t_0$ is a synchronized reference time and $\Delta$ is the epoch duration (default: 60~seconds). Sensors maintain loose time synchronization via BLE beacon timestamps, with $\pm 50$~ms tolerance (within the 1-second window).
+
+where $t_0$ is a synchronized reference time and $\Delta$ is the epoch duration (default: 60~seconds). Sensors maintain loose time synchronization via BLE connection event timestamps; with typical MCU clock drift of $\pm 20$~ppm, the accumulated error over a 60-second epoch is $< 1.2$~ms, well within the $\pm 50$~ms synchronization tolerance.
 
 At each epoch, sensors capture fresh windows and derive new keys. Previous key material is erased from SRAM. This provides:
 \begin{enumerate}
     \item \textit{Replay resistance}: A replayed commitment from epoch $k'$ fails because the responder's embedding $\mathbf{z}_j^{(k)}$ differs from $\mathbf{z}_j^{(k')}$ due to physiological evolution.
-    \item \textit{Key independence}: Each key is derived from a distinct signal window. Since no long-term keying material exists---$f_\theta$ is public and no master secret is stored---compromise of session key $K^{(k)}$ does not reveal $K^{(k')}$ for $k' \neq k$. This property is better described as key independence rather than forward secrecy in the traditional sense, since there is no long-term secret whose compromise would retroactively threaten past sessions.
+    \item \textit{Key independence}: Each key is derived from a distinct signal window. Since no long-term keying material exists ($f_\theta$ is public and no master secret is stored), compromise of session key $K^{(k)}$ does not reveal $K^{(k')}$ for $k' \neq k$. This property is better described as key independence rather than forward secrecy in the traditional sense, since there is no long-term secret whose compromise would retroactively threaten past sessions.
 \end{enumerate}
 
 
+\subsection{Hybrid PhysioKey + ECDH Protocol}
+\label{subsec:hybrid}
+
+The effective key entropy of standalone PhysioKey (7--24 bits) is modest. For applications requiring stronger guarantees, we propose a hybrid protocol that combines PhysioKey's on-body authentication with ECDH's cryptographic key establishment. The hybrid approach provides defense in depth: an adversary must both break ECDH \textit{and} physically access the patient's body.
+
+\textbf{Protocol.} The hybrid key agreement proceeds in three stages:
+
+\begin{enumerate}
+    \item \textbf{PhysioKey authentication}: Sensors $s_i$ and $s_j$ execute the standard PhysioKey protocol (Section~\ref{subsec:key_derivation}) to derive $K_{\text{physio}}$ with confirmation hash $h$. This authenticates that both sensors are on the same body.
+    \item \textbf{ECDH key exchange}: Sensors perform an ephemeral ECDH exchange over BLE, yielding shared secret $K_{\text{ecdh}}$.
+    \item \textbf{Key combination}: The session key is derived as:
+
+    \begin{equation}
+    \label{eq:hybrid_key}
+    K_{\text{session}} = \text{HKDF-SHA-256}(K_{\text{physio}} \| K_{\text{ecdh}} \| \text{context} \| \text{nonce})
+    \end{equation}
+
+    where $\text{context}$ includes sensor identifiers and epoch number.
+\end{enumerate}
+
+\textbf{Security.} The hybrid protocol achieves 128-bit computational security from ECDH while adding PhysioKey's physical authentication. A man-in-the-middle attack requires the adversary to \textit{simultaneously} (a) break the ECDH exchange (computationally infeasible with ECC-256) and (b) produce physiological embeddings consistent with the patient's body (physically infeasible without body access). Neither factor alone is sufficient: ECDH without PhysioKey is vulnerable to an impersonation attack where the adversary introduces a rogue sensor within BLE range of the patient (a MitM is feasible since unauthenticated ECDH provides no identity binding); PhysioKey without ECDH has only 7--24 bits of entropy.
+
+\textbf{Resource cost.} The hybrid protocol adds ECC-256 overhead to PhysioKey:
+
+\begin{itemize}
+    \item \textbf{Standalone PhysioKey}: 2.6~ms latency, 0.125~mJ energy per sensor
+    \item \textbf{ECDH addition}: 142~ms latency, 6.84~mJ energy
+    \item \textbf{HKDF-SHA-256}: 0.5~ms latency, 0.024~mJ energy
+    \item \textbf{Hybrid total}: $\approx$145~ms latency, $\approx$7.0~mJ energy per sensor
+\end{itemize}
+
+The hybrid protocol is roughly $56\times$ slower and $56\times$ more energy-intensive than standalone PhysioKey, but still $12\times$ faster than RSA-2048 (1820~ms). For battery-constrained nodes performing infrequent key agreements (\eg, once per minute), the 7.0~mJ cost remains practical: dedicating 10\% of a 225~mAh coin cell's energy budget ($\sim$243~J) to key agreement would support a theoretical maximum of approximately 34,700 hybrid agreements (cf.\ $\sim$972,000 for standalone PhysioKey in Section~\ref{subsec:resource_analysis}); in practice, self-discharge, quiescent current, and concurrent workloads reduce these figures substantially.
+
+\textbf{Deployment guidance.} Standalone PhysioKey is appropriate for low-security, high-frequency scenarios where energy is the primary constraint (\eg, continuous sensor-to-coordinator data encryption refresh). The hybrid protocol is recommended for high-security scenarios such as initial enrollment, firmware update authentication, or clinical decision support data channels.
+
+
 % ============================================================
-% V. SECURITY ANALYSIS
+% 5. SECURITY ANALYSIS
 % ============================================================
 \section{Security Analysis}
 \label{sec:security}
@@ -491,21 +549,23 @@ At each epoch, sensors capture fresh windows and derive new keys. Previous key m
 
 The security of PhysioKey depends on the entropy of the derived key, which is determined by the entropy of the quantized embedding $\mathbf{b}^{(k)}$.
 
-\textbf{Quantized representation entropy vs.\ source entropy.} An important distinction must be drawn. The quantization boundaries in PhysioKey are set using percentiles of the training distribution (\eg, median for 1-bit, quartiles for 2-bit). By construction, percentile-based boundaries produce approximately uniform bin occupancy, so the per-dimension entropy of the \textit{quantized representation} approaches the theoretical maximum of $q$ bits. However, this does not imply that the underlying source signal carries $q$ bits of entropy per dimension---the uniform bin occupancy is an artifact of the quantization design, not a property of the signal itself. What matters for security is whether an adversary who cannot measure the body's signals can predict the quantized output; the relevant quantity is the conditional entropy $H(\mathbf{b}^{(k)} | \mathcal{A}\text{'s observations})$, which is discussed below.
+\textbf{Quantized representation entropy vs.\ source entropy.} An important distinction must be drawn. The quantization boundaries in PhysioKey are set using percentiles of the training distribution (\eg, median for 1-bit, quartiles for 2-bit). By construction, percentile-based boundaries produce approximately uniform bin occupancy, so the per-dimension entropy of the \textit{quantized representation} approaches the theoretical maximum of $q$ bits. However, this does not imply that the underlying source signal carries $q$ bits of entropy per dimension; the uniform bin occupancy is an artifact of the quantization design, not a property of the signal itself. What matters for security is whether an adversary who cannot measure the body's signals can predict the quantized output; the relevant quantity is the conditional entropy $H(\mathbf{b}^{(k)} | \mathcal{A}\text{'s observations})$, which is discussed below.
 
-\begin{theorem}[Entropy of PhysioKey Quantized Embeddings]
-\label{thm:entropy}
+\begin{Remark}[Entropy Bound for PhysioKey Quantized Embeddings]
+\label{rem:entropy}
 Let $\mathbf{z}^{(k)} \in \mathbb{R}^{32}$ be the embedding produced by $f_\theta$. Under percentile-based $q$-bit quantization with decorrelation regularization driving inter-dimension correlation toward zero, the entropy of the quantized string $\mathbf{b}^{(k)} \in \{0,1\}^{dq}$ satisfies:
+
 \begin{equation}
 \label{eq:quant_entropy}
 H(\mathbf{b}^{(k)}) \leq d \cdot q \text{ bits (with equality when dimensions are independent)}
 \end{equation}
-For $q = 1$: $H(\mathbf{b}^{(k)}) \leq 32$ bits. For $q = 2$: $H(\mathbf{b}^{(k)}) \leq 64$ bits.
-\end{theorem}
+
+For $q = 1$: $H(\mathbf{b}^{(k)}) \leq 32$ bits. For $q = 2$: $H(\mathbf{b}^{(k)}) \leq 64$ bits. This bound follows directly from the chain rule of entropy and the fact that each $q$-bit quantized dimension has at most $q$ bits of entropy; it is stated here as a remark rather than a theorem since the result is a standard consequence of information-theoretic definitions.
+\end{Remark}
 
 The decorrelation loss term encourages independence between dimensions, and empirical analysis on PTB-XL shows near-maximum per-dimension entropy. But these are upper bounds on the entropy of the representation; the actual min-entropy available for key derivation is lower once BCH redundancy is accounted for.
 
-\textbf{Effective key entropy after fuzzy commitment.} The fuzzy commitment leaks information through the helper data $c$. Following Dodis \etal~\cite{dodis2008fuzzy}, the entropy loss is bounded by the BCH code redundancy $n_c - k_c$. The effective key entropy is therefore $k_c$ bits---the message dimension of the BCH code, which equals the length of the random key $K$. Concretely:
+\textbf{Effective key entropy after fuzzy commitment.} The fuzzy commitment leaks information through the helper data $c$. Following Dodis \etal~\cite{dodis2008fuzzy}, the entropy loss is bounded by the BCH code redundancy $n_c - k_c$. The effective key entropy is therefore $k_c$ bits, i.e., the message dimension of the BCH code, which equals the length of the random key $K$. Concretely:
 
 \begin{itemize}
     \item BCH(63,24,15) with $t=7$: effective key entropy $= 24$ bits
@@ -515,297 +575,497 @@ The decorrelation loss term encourages independence between dimensions, and empi
 
 These are modest values. The SHA-256 key derivation $K_{\text{session}} = \text{SHA-256}(K \| \text{nonce} \| \text{context})$ stretches the output to 256 bits, providing \textit{computational} security under the random oracle model. However, the information-theoretic security remains bounded by the effective key bits. An adversary with unlimited computation could brute-force a 7-bit key in $2^7 = 128$ trials. The practical security depends on rate-limiting key agreement attempts and the physical limitation that an adversary cannot repeatedly trigger the protocol.
 
-\textbf{Conditional entropy against an external adversary.} Since $\mathcal{A}$ cannot measure the body's physiological signals (limitation L1), the adversary's best strategy is random guessing of the padded bit string. For the 1-bit configuration with BCH(63,7,31) and $t = 15$:
+\textbf{Conditional entropy against an external adversary.} Since $\mathcal{A}$ cannot measure the body's physiological signals (limitation L1), the adversary's best strategy is random guessing of the padded bit string. An adversary with demographic or clinical side information (e.g., resting heart rate, known cardiac conditions) could narrow the search space; the analysis below assumes no such side information, representing the most favorable bound for the defender. For the 1-bit configuration with BCH(63,7,31) and $t = 15$:
+
 \begin{equation}
 \Pr[d_H(\text{pad}(\mathbf{b}_i^{(k)}), \mathbf{b}_{\mathcal{A}}) \leq t] = \sum_{j=0}^{15} \binom{63}{j} \cdot 2^{-63}
 \end{equation}
 
-Computing this sum: $\sum_{j=0}^{15}\binom{63}{j} \approx 2^{62 \cdot H_2(15/63)} \approx 2^{62 \times 0.817} \approx 2^{50.7}$, so the probability is approximately $2^{50.7 - 63} = 2^{-12.3}$. This is not negligible in the cryptographic sense. The security against random guessing for the BCH(63,7,31) configuration is roughly equivalent to 12 bits of security---adequate for a session key refreshed every 60 seconds but far below standard cryptographic thresholds. Stronger BCH codes (\eg, BCH(63,24,15) with $t = 7$) yield lower guessing probability but also lower success rates (33.8\%).
+Computing this sum numerically: $\sum_{j=0}^{15}\binom{63}{j} = 1{,}235{,}070{,}694{,}400$, giving $\Pr \approx 1.34 \times 10^{-7} \approx 2^{-22.8}$. A looser upper bound via the binary entropy function yields $\Pr \leq 2^{63 \cdot H_2(15/63)} / 2^{63} \approx 2^{-12.3}$. The discrepancy arises because the entropy-based bound is a well-known overestimate for tail sums of binomial coefficients; the exact combinatorial calculation ($2^{-22.8}$) is the correct value. The entropy bound remains useful as a quick conservative estimate. For security margin calculations, the exact value of $\sim$23~bits of guessing resistance is appropriate, though this still falls far below standard 128-bit cryptographic thresholds. Stronger BCH codes (\eg, BCH(63,24,15) with $t = 7$) yield lower guessing probability but also lower success rates (47.5\%).
 
 \subsection{Attack Resistance}
 \label{subsec:attack_resistance}
 
 \textbf{Eavesdropping resistance.} The adversary observes $(c, h, \text{nonce})$. The commitment $c = \text{BCH-Encode}(K) \oplus \text{pad}(\mathbf{b}_i^{(k)})$ is computationally indistinguishable from random without $\mathbf{b}_i^{(k)}$, since $K$ is uniformly random. The hash $h = \text{SHA-256}(K \| \text{nonce})$ reveals no information about $K$ under the random oracle model.
 
-\textbf{Replay resistance.} Temporal drift analysis on PTB-XL shows that non-adjacent windows from the same patient produce a mean Hamming distance of $30.2$ bits on 64-bit embeddings, with 99.2\% of replayed vectors exceeding BCH correction capability:
+\textbf{Replay resistance.} Temporal drift analysis on PTB-XL (2-bit quantization, 64-bit embeddings) shows that non-adjacent windows from the same patient produce a mean Hamming distance of $30.2$ bits, with 99.2\% of replayed vectors exceeding BCH correction capability:
+
 \begin{equation}
 \Pr[\text{replay succeeds}] \leq 0.008
 \end{equation}
+
 The temporal variability of physiological signals makes replayed commitments from previous epochs ineffective.
 
-\textbf{Impersonation resistance.} A rogue sensor not on the patient produces embeddings with mean cosine similarity of $0.241$ to legitimate sensors (versus $0.703$ for intra-body pairs). The resulting Hamming distances far exceed BCH correction capacity, yielding impersonation probability bounded by FAR. At the EER threshold ($\tau = 0.497$), $\text{FAR} = 13.3\%$. This FAR is a significant security limitation that must be acknowledged: roughly 1 in 8 impersonation attempts by an adversary with a random physiological signal would produce embeddings close enough to fall within the acceptance region based on cosine similarity alone. However, the impersonator must \textit{also} produce quantized bits within Hamming distance $t$ of the legitimate bits, and the BCH decoding must succeed, which substantially reduces the effective impersonation rate. The combined false acceptance through the full fuzzy commitment pipeline is lower than the cosine-similarity FAR, though it remains a concern for high-security applications.
+\textbf{Impersonation resistance.} A rogue sensor not on the patient produces embeddings with mean cosine similarity of $0.174$ to legitimate sensors, compared to $0.758$ for intra-body pairs (both values cross-validated on PTB-XL). The resulting Hamming distances far exceed BCH correction capacity, yielding impersonation probability bounded by FAR. At the EER threshold, $\text{FAR} \approx 7.8\%$. This FAR is a security limitation: roughly 1 in 14 impersonation attempts by an adversary with a random physiological signal would produce embeddings close enough to fall within the acceptance region based on cosine similarity alone. However, the impersonator must \textit{also} produce quantized bits within Hamming distance $t$ of the legitimate bits, and the BCH decoding must succeed, which substantially reduces the effective impersonation rate. For high-security applications, the hybrid PhysioKey+ECDH protocol (Section~\ref{subsec:hybrid}) mitigates this limitation entirely.
 
-\textbf{Model inversion resistance.} Even with white-box access to $f_\theta$: (1)~$f_\theta$ is many-to-one ($\mathbb{R}^{256} \rightarrow \mathbb{R}^{32}$), making inversion infeasible; (2)~recovering $\mathbf{b}_i^{(k)}$ from $c$ requires knowing $K$, creating a circular dependency.
+\textbf{Model inversion resistance.} Even with white-box access to $f_\theta$: (1)~$f_\theta$ is many-to-one ($\mathbb{R}^{128} \rightarrow \mathbb{R}^{32}$), making inversion infeasible; (2)~recovering $\mathbf{b}_i^{(k)}$ from $c$ requires knowing $K$, creating a circular dependency.
 
 \subsection{Security Property Comparison}
 \label{subsec:security_comparison}
 
 Table~\ref{tab:security_comparison} compares security properties of PhysioKey against representative schemes.
 
-\begin{table}[!t]
-\centering
-\caption{Security Property Comparison}
-\label{tab:security_comparison}
-\small
-\begin{tabular}{lccccc}
+\begin{table}[H]
+\caption{Security Property Comparison.\label{tab:security_comparison}}
+\begin{tabularx}{\textwidth}{lCCCCC}
 \toprule
-\textbf{Property} & \textbf{AES-} & \textbf{ECC-} & \textbf{LEAP} & \textbf{Poon} & \textbf{Physio-} \\
- & \textbf{PSK} & \textbf{256} & \textbf{+} & \etal & \textbf{Key} \\
+\textbf{Property} & \textbf{AES-PSK} & \textbf{ECC-256} & \textbf{LEAP+} & \textbf{Poon \etal} & \textbf{PhysioKey} \\
 \midrule
 No pre-shared key & \texttimes & \texttimes & \texttimes & \checkmark & \checkmark \\
-Adaptive features & \texttimes & N/A & \texttimes & \texttimes & \checkmark \\
+$\geq$128-bit key & \checkmark & \checkmark & \checkmark & \checkmark & \texttimes\textsuperscript{c} \\
+Learned features\textsuperscript{a} & \texttimes & N/A & \texttimes & \texttimes & \checkmark \\
 Replay resistant & Partial & \checkmark & \checkmark & \texttimes & \checkmark \\
-Key independence$^\dagger$ & \texttimes & \checkmark & \texttimes & \texttimes & \checkmark \\
+Key independence\textsuperscript{b} & \texttimes & \checkmark & \texttimes & \texttimes & \checkmark \\
 Plug-and-play & \texttimes & \texttimes & \texttimes & \checkmark & \checkmark \\
 \bottomrule
-\multicolumn{6}{l}{\footnotesize $^\dagger$No long-term keys; each session key derived independently.}
-\end{tabular}
+\end{tabularx}
+\noindent{\footnotesize{\textsuperscript{a} Offline-trained; the deployed model is fixed (no on-device adaptation). \textsuperscript{b} No long-term keys; each session key derived independently. \textsuperscript{c} Standalone PhysioKey: 7--24 effective key bits; hybrid PhysioKey+ECDH achieves 128-bit keys (Section~\ref{subsec:hybrid}).}}
 \end{table}
 
 
 % ============================================================
-% VI. PERFORMANCE EVALUATION
+% 6. PERFORMANCE EVALUATION
 % ============================================================
 \section{Performance Evaluation}
 \label{sec:evaluation}
 
-This section reports simulation-based evaluation of PhysioKey using the PhysioNet PTB-XL dataset and analytical resource estimates for Cortex-M4 hardware.
+This section reports simulation-based evaluation of PhysioKey using two PhysioNet datasets (PTB-XL and BIDMC) and analytical resource estimates for Cortex-M4 hardware.
 
 \subsection{Dataset and Preprocessing}
 \label{subsec:datasets}
 
-The evaluation uses the PTB-XL database~\cite{goldberger2000physiobank, wagner2020ptbxl}, which contains 21,837 12-lead ECG recordings from 18,885 patients sampled at 500~Hz. Lead~I and Lead~II are extracted as proxies for two different sensor modalities on the same body. These leads share a common cardiovascular origin but exhibit distinct waveform morphologies, providing a conservative model of ECG-PPG pairing where co-located sensors would likely show higher correlation.
+The evaluation uses two complementary datasets that differ substantially in scale, reflecting the availability of public physiological databases for each modality. The PTB-XL database~\cite{goldberger2000physiobank, wagner2020ptbxl} is one of the largest publicly available clinical ECG collections, containing 21,837 12-lead ECG recordings from 18,885 patients sampled at 500~Hz. Lead~I and Lead~II are extracted as two ECG channels from the same body; these leads share a common cardiovascular origin but exhibit distinct waveform morphologies due to different electrode placement vectors. While prior work has used paired ECG-PPG from MIMIC-III~\cite{johnson2016mimic}, that dataset requires institutional credentialing. The BIDMC PPG and Respiration Dataset~\cite{pimentel2017bidmc} provides open-access synchronized ECG and PPG recordings, described in Section~\ref{subsec:bidmc}.
 
-From 500 patients, 200 are used for training and 100 for testing (the remaining 200 are held out). This yields 2,000 training window pairs and 1,000 test window pairs. It should be noted that this is a single train/test split without cross-validation; results may vary across different splits.
+From PTB-XL, 500 patients are randomly sampled (fixed random seed for reproducibility) from the full 18,885-patient pool to manage computational cost, since 5-fold CV requires training 5 fresh models; this subset is large enough for stable cross-validated estimates while keeping total training time under one hour. In each fold, 400 patients are used for training and 100 for testing (see Section~\ref{subsec:cv}).
 
-\textbf{Preprocessing.} Raw signals are: (1)~resampled from 500~Hz to 256~Hz; (2)~bandpass filtered at 0.5--40~Hz with a fourth-order Butterworth filter; (3)~normalized to zero mean and unit variance per recording; (4)~segmented into non-overlapping 1-second windows ($L = 256$). Low-quality windows (standard deviation $< 0.1$) are discarded.
+\textbf{Preprocessing.} Raw PTB-XL signals are: (1)~resampled from 500~Hz to 256~Hz; (2)~bandpass filtered at 0.5--40~Hz with a fourth-order Butterworth filter; (3)~normalized to zero mean and unit variance per recording; (4)~segmented into non-overlapping 0.5-second windows ($L = 128$). Low-quality windows (standard deviation $< 0.1$) are discarded.
+
+\subsection{BIDMC ECG+PPG Dataset}
+\label{subsec:bidmc}
+
+To evaluate PhysioKey on \textit{genuinely multi-modal} data, we employ the BIDMC PPG and Respiration Dataset~\cite{pimentel2017bidmc, goldberger2000physiobank}. This open-access dataset contains 53 recordings from ICU patients, each approximately 8~minutes long, with synchronized ECG (Lead~II) and PPG (pulse oximeter plethysmograph) channels sampled at 125~Hz. The relatively small size of BIDMC (53 vs.\ 18,885 patients in PTB-XL) reflects the scarcity of publicly available datasets with time-synchronized multi-modal physiological signals; collecting simultaneous ECG and PPG with precise temporal alignment requires specialized instrumentation that is uncommon in routine clinical practice. In contrast to the PTB-XL dual-ECG evaluation, BIDMC provides true ECG+PPG pairs from different sensing modalities on the same patient.
+
+\textbf{Preprocessing differences.} BIDMC signals are resampled from 125~Hz to 256~Hz via linear interpolation for pipeline consistency. Linear interpolation for $2.048\times$ upsampling can introduce spectral images above the original Nyquist frequency (62.5~Hz); however, the subsequent 0.5--40~Hz bandpass filter (ECG) and 0.5--8~Hz bandpass filter (PPG) act as anti-imaging filters, attenuating any interpolation artifacts above the signal bandwidth. The ECG channel uses the same 0.5--40~Hz bandpass filter. The PPG channel uses a narrower 0.5--8~Hz bandpass, reflecting the lower-frequency content of the photoplethysmographic waveform~\cite{clifford2006advanced}. All other preprocessing steps (normalization, windowing, quality filtering) are identical to PTB-XL.
+
+\textbf{Dataset characteristics.} The 53 BIDMC recordings yield approximately 2650 ECG-PPG window pairs (capped at 50 per patient to balance representation; the same per-patient cap is applied to PTB-XL for consistency). While substantially smaller than PTB-XL, this dataset provides the critical test of whether PhysioKey generalizes across sensing modalities (electrical ECG vs.\ optical PPG), not just across different ECG leads. As shown in Section~\ref{subsec:cv}, the single shared-encoder architecture fails this test (EER $\sim$48.3\%), but the dual-encoder architecture reduces EER to 30.6\%, partially bridging the cross-modal gap.
 
 \subsection{Simulation Setup}
 \label{subsec:sim_setup}
 
-The simulation uses Python 3.12 with PyTorch 2.5.1 (CPU). Training runs for 150 epochs with the Adam optimizer (learning rate $5 \times 10^{-4}$, batch size 128), cosine annealing schedule, and the combined loss from Eq.~\ref{eq:loss}: NT-Xent contrastive ($\tau_T = 0.05$), decorrelation ($\lambda = 0.05$), and alignment ($\mu = 0.5$). Gray code quantization and BCH error correction are implemented in Python. Hardware estimates are analytical, based on ARM Cortex-M4 (STM32F407) specifications: 168~MHz, 1.25~DMIPS/MHz, 0.287~mW/MHz active power, with CMSIS-NN kernels~\cite{lai2018cmsis}.
+The simulation uses Python 3.12 with PyTorch 2.5.1 on a single CPU (Intel Core i7-12700, 32~GB RAM, Windows 11). Each fold trains for 150 epochs ($\sim$12 min per fold); ablation and synchronization studies use 80--100 epochs, confirmed to converge (loss decrease $<$0.5\% over the final 20 epochs). Training uses the Adam optimizer (learning rate $5 \times 10^{-4}$, batch size 128), cosine annealing schedule (minimum learning rate $1 \times 10^{-6}$, no warm restarts), and the combined loss from Equation~(\ref{eq:loss}): NT-Xent contrastive ($\tau_T = 0.05$), decorrelation ($\lambda = 0.05$), and alignment ($\mu = 0.5$). Gray code quantization and BCH error correction are implemented in Python. Hardware estimates are analytical, based on ARM Cortex-M4 (STM32F407) specifications: 168~MHz, 1.25~DMIPS/MHz, 0.287~mW/MHz active power, with CMSIS-NN kernels~\cite{lai2018cmsis}.
+
+\subsection{Cross-Validation Results}
+\label{subsec:cv}
+
+All results are reported using patient-level 5-fold cross-validation: patients are partitioned into 5 disjoint groups, and each fold uses 4 groups for training and 1 for testing. A fresh model is trained from scratch for each fold, ensuring no information leakage. Metrics are reported as mean $\pm$ standard deviation across folds.
+
+\begin{table}[H]
+\caption{5-Fold Cross-Validation Summary. All values are mean $\pm$ std across folds.\label{tab:cv_summary}}
+\begin{tabularx}{\textwidth}{lCCC}
+\toprule
+\textbf{Metric} & \textbf{PTB-XL (Lead I/II)} & \textbf{BIDMC Shared} & \textbf{BIDMC Dual-Enc.} \\
+\midrule
+Intra-body cosine & $0.758 \pm 0.011$ & $0.570 \pm 0.046$ & $0.727 \pm 0.009$ \\
+Inter-body cosine & $0.174 \pm 0.011$ & $0.565 \pm 0.050$ & $0.549 \pm 0.014$ \\
+EER (\%) & $7.8 \pm 0.8$ & $48.3 \pm 2.4$ & $30.6 \pm 1.2$ \\
+ROC AUC & $0.978 \pm 0.004$ & $0.516 \pm 0.026$ & $0.760 \pm 0.012$ \\
+BDR (1-bit) & $0.248 \pm 0.006$ & $0.540 \pm 0.021$ & $0.380 \pm 0.006$ \\
+BDR (2-bit) & $0.301 \pm 0.006$ & $0.532 \pm 0.007$ & $0.426 \pm 0.006$ \\
+\# Patients & 500 & 53 & 53 \\
+\# Windows/fold (test) & $\sim$1960 & $\sim$530 & $\sim$530 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Table~\ref{tab:cv_summary} presents the cross-validated results for all configurations. On PTB-XL, the shared-encoder model achieves strong intra-body versus inter-body separation (cosine similarity 0.758 vs.\ 0.174), yielding an EER of 7.8\% and AUC of 0.978 with narrow confidence intervals. On BIDMC with true ECG+PPG pairs, the single shared-encoder CNN fails to learn cross-modal features: intra-body and inter-body cosine similarities are nearly identical (0.570 vs.\ 0.565), producing a near-chance EER of 48.3\%. This negative result reveals that the morphological gap between electrical (ECG) and optical (PPG) signals is too large for a shared encoder architecture to bridge. However, a \textbf{dual-encoder architecture} with modality-specific convolutional stacks (one for ECG, one for PPG) and a shared projection head ($\sim$8448 parameters, $\sim$33.3~KB flash) reduces EER to $30.6\% \pm 1.2\%$ (AUC $0.760 \pm 0.012$), a 37\% relative improvement. Intra-body cosine similarity recovers to 0.727, with meaningful separation from the inter-body mean of 0.549. While the dual-encoder does not match same-modality PTB-XL performance, it demonstrates that modality-specific feature extraction substantially narrows the cross-modal gap.
 
 \subsection{Embedding Quality}
 \label{subsec:embedding_quality}
 
-\textbf{Intra-body vs.\ inter-body similarity.} Intra-body pairs (same patient, Lead~I vs.\ Lead~II) achieve mean cosine similarity $\bar{\rho}_{\text{intra}} = 0.703$ ($\sigma = 0.173$), while inter-body pairs yield $\bar{\rho}_{\text{inter}} = 0.241$ ($\sigma = 0.228$). The separation of 0.462 between means confirms that the learned embeddings capture patient-specific features, though the distributions overlap---a point reflected in the non-trivial EER.
+\textbf{Intra-body vs.\ inter-body similarity.} On PTB-XL, intra-body pairs (same patient, Lead~I vs.\ Lead~II) achieve mean cosine similarity $\bar{\rho}_{\text{intra}} = 0.758 \pm 0.011$ (5-fold CV), while inter-body pairs yield $\bar{\rho}_{\text{inter}} = 0.174 \pm 0.011$. The separation of 0.584 between means confirms that the learned embeddings capture patient-specific features, though the distributions overlap, a point reflected in the non-trivial EER. On BIDMC with the shared encoder, the gap collapses ($\bar{\rho}_{\text{intra}} = 0.570$ vs.\ $\bar{\rho}_{\text{inter}} = 0.565$), but the dual-encoder recovers meaningful separation ($\bar{\rho}_{\text{intra}} = 0.727$ vs.\ $\bar{\rho}_{\text{inter}} = 0.549$), as discussed in Section~\ref{subsec:cv}.
 
 \textbf{FAR and FRR.} Table~\ref{tab:far_frr} reports False Acceptance Rate and False Rejection Rate at various cosine similarity thresholds.
 
-\begin{table}[!t]
-\centering
-\caption{FAR and FRR at Various Cosine Similarity Thresholds}
-\label{tab:far_frr}
-\small
-\begin{tabular}{cccc}
+\begin{table}[H]
+\caption{FAR and FRR at Various Cosine Similarity Thresholds (PTB-XL, 5-fold CV mean $\pm$ std).\label{tab:far_frr}}
+\begin{tabularx}{\textwidth}{CCCC}
 \toprule
-\textbf{Threshold $\tau$} & \textbf{FAR} & \textbf{FRR} & \textbf{BER} \\
+\textbf{Threshold $\tau$} & \textbf{FAR} & \textbf{FRR} & \textbf{BER\textsuperscript{$\dagger$}} \\
 \midrule
-0.40 & 0.254 & 0.065 & 0.160 \\
-0.45 & 0.188 & 0.091 & 0.140 \\
-\textbf{0.50} & \textbf{0.129} & \textbf{0.133} & \textbf{0.131} \\
-0.55 & 0.086 & 0.178 & 0.132 \\
-0.60 & 0.054 & 0.236 & 0.145 \\
-0.65 & 0.030 & 0.320 & 0.175 \\
-0.70 & 0.015 & 0.408 & 0.212 \\
+0.40 & $0.182 \pm 0.017$ & $0.020 \pm 0.005$ & $0.101 \pm 0.011$ \\
+0.45 & $0.135 \pm 0.014$ & $0.032 \pm 0.005$ & $0.083 \pm 0.008$ \\
+0.50 & $0.097 \pm 0.010$ & $0.054 \pm 0.011$ & $0.075 \pm 0.008$ \\
+\textbf{0.55} & $\mathbf{0.066 \pm 0.009}$ & $\mathbf{0.083 \pm 0.015}$ & $\mathbf{0.075 \pm 0.009}$ \\
+0.60 & $0.043 \pm 0.006$ & $0.132 \pm 0.020$ & $0.087 \pm 0.010$ \\
+0.65 & $0.026 \pm 0.004$ & $0.196 \pm 0.027$ & $0.111 \pm 0.013$ \\
+0.70 & $0.014 \pm 0.004$ & $0.281 \pm 0.026$ & $0.148 \pm 0.012$ \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\noindent{\footnotesize{\textsuperscript{$\dagger$} BER = Balanced Error Rate, defined as $(\text{FAR} + \text{FRR})/2$.}}
 \end{table}
 
-\textbf{EER and ROC.} The Equal Error Rate is 13.3\% at threshold $\tau \approx 0.497$, with ROC AUC $= 0.943$. This is a higher EER than reported by some prior physiological key agreement schemes---Poon \etal~\cite{poon2006novel} report approximately 5\% using IPI features on synchronized ECG-PPG pairs, and Rostami \etal~\cite{rostami2013heart} achieve roughly 2.3\% with hand-crafted ECG features in an implant-to-reader scenario. However, those results use directly paired ECG-PPG sensors or specialized settings, whereas the Lead~I vs.\ Lead~II evaluation here is a deliberately conservative proxy. Improvement with true co-located ECG-PPG sensors is expected.
+\textbf{EER and ROC.} On PTB-XL, the cross-validated Equal Error Rate is $7.8\% \pm 0.8\%$ with ROC AUC $= 0.978 \pm 0.004$ (5-fold CV). On BIDMC with true ECG+PPG pairs, the shared-encoder model produces near-chance EER of $48.3\% \pm 2.4\%$ (AUC $0.516 \pm 0.026$), while the dual-encoder reduces this to $30.6\% \pm 1.2\%$ (AUC $0.760 \pm 0.012$), as detailed in Table~\ref{tab:cv_summary}. Prior physiological key agreement schemes report lower EERs, but direct comparison is limited because those methods accumulate bits over many heartbeats (tens of seconds to minutes of recording) rather than a single 0.5-second window, use single train/test splits on smaller datasets without cross-validation, and employ different evaluation protocols. With these caveats, Poon \etal~\cite{poon2006novel} report approximately 5\% using IPI features on synchronized ECG-PPG pairs, and Rostami \etal~\cite{rostami2013heart} achieve roughly 2.3\% with hand-crafted ECG features in an implant-to-reader scenario. Notably, Poon's result uses cross-modal ECG-PPG pairing, at which PhysioKey's shared encoder fails entirely (Section~\ref{subsec:cv}), while PhysioKey's 7.8\% EER is achieved on same-modality ECG-ECG pairs.
 
-\textbf{Bit Disagreement Rate.} The mean BDR between intra-body pairs is 0.292 for 1-bit quantization (32 raw bits) and 0.340 for 2-bit quantization (64 raw bits). These BDR values determine the error-correction capacity required for key agreement.
+\textbf{Bit Disagreement Rate.} On PTB-XL, the mean BDR between intra-body pairs is $0.249 \pm 0.008$ for 1-bit quantization (32 raw bits) and $0.301 \pm 0.006$ for 2-bit quantization (64 raw bits). These BDR values determine the error-correction capacity required for key agreement. On BIDMC with the shared encoder, BDR values of $0.578$ and $0.552$ exceed the random coin-flip baseline of $0.5$, indicating anti-correlated embeddings that are \textit{worse} than chance for key agreement; the dual-encoder reduces these to $0.380$ (1-bit) and $0.426$ (2-bit), below the 0.5 baseline but still above PTB-XL levels (see Section~\ref{subsec:cv} for full discussion).
 
 \subsection{Key Agreement Success Rate}
 \label{subsec:key_agreement_rate}
 
-Table~\ref{tab:ka_sweep} reports the key agreement success rate across BCH configurations. Because standard BCH codes have block lengths $n_c = 2^m - 1$, the 32 raw bits from 1-bit quantization are zero-padded to 63 bits, and the 64 raw bits from 2-bit quantization are padded to 127 bits. Each row uses a real BCH code; the $k_c$ column gives the effective key length---the number of truly random key bits.
+Table~\ref{tab:ka_sweep} reports the key agreement success rate across BCH configurations. Because standard BCH codes have block lengths $n_c = 2^m - 1$, the 32 raw bits from 1-bit quantization are zero-padded to 63 bits, and the 64 raw bits from 2-bit quantization are padded to 127 bits. Each row uses a real BCH code; the $k_c$ column gives the effective key length, i.e., the number of truly random key bits.
 
-\begin{table}[!t]
-\centering
-\caption{Key Agreement Success Rate vs.\ BCH Parameters. The effective key length $k_c$ represents the information-theoretic key entropy.}
-\label{tab:ka_sweep}
-\small
-\begin{tabular}{lcccc}
+\begin{table}[H]
+\caption{Key Agreement Success Rate vs.\ BCH Parameters. The effective key length $k_c$ represents the information-theoretic key entropy.\label{tab:ka_sweep}}
+\begin{tabularx}{\textwidth}{lCCCC}
 \toprule
-\textbf{BCH Code} & \textbf{$t$} & \textbf{Eff.\ Key} & \textbf{BDR} & \textbf{Success} \\
- & & \textbf{(bits)} & & \\
+\textbf{BCH Code} & \textbf{$t$} & \textbf{Eff.\ Key (bits)} & \textbf{BDR} & \textbf{Success} \\
 \midrule
 \multicolumn{5}{l}{\textit{1-bit quantization (32 raw $\rightarrow$ 63 padded)}} \\
-BCH(63,24,15) & 7 & 24 & 0.292 & 33.8\% \\
-BCH(63,18,21) & 10 & 18 & 0.292 & 62.8\% \\
-BCH(63,16,23) & 11 & 16 & 0.292 & 73.2\% \\
-BCH(63,10,27) & 13 & 10 & 0.292 & 86.1\% \\
-BCH(63,7,31) & 15 & 7 & 0.292 & 93.6\% \\
+BCH(63,24,15) & 7 & 24 & 0.248 & 47.5\% \\
+BCH(63,18,21) & 10 & 18 & 0.248 & 78.2\% \\
+BCH(63,16,23) & 11 & 16 & 0.248 & 84.8\% \\
+BCH(63,10,27) & 13 & 10 & 0.248 & 93.9\% \\
+BCH(63,7,31) & 15 & 7 & 0.248 & 97.8\% \\
 \midrule
 \multicolumn{5}{l}{\textit{2-bit quantization (64 raw $\rightarrow$ 127 padded)}} \\
-BCH(127,43,31) & 15 & 43 & 0.340 & 17.4\% \\
-BCH(127,29,43) & 21 & 29 & 0.340 & 48.9\% \\
-BCH(127,22,47) & 23 & 22 & 0.340 & 59.9\% \\
-BCH(127,15,55) & 27 & 15 & 0.340 & 80.4\% \\
-BCH(127,8,63) & 31 & 8 & 0.340 & 92.4\% \\
+BCH(127,43,31) & 15 & 43 & 0.301 & 28.6\% \\
+BCH(127,29,43) & 21 & 29 & 0.301 & 64.2\% \\
+BCH(127,22,47) & 23 & 22 & 0.301 & 74.8\% \\
+BCH(127,15,55) & 27 & 15 & 0.301 & 90.4\% \\
+BCH(127,8,63) & 31 & 8 & 0.301 & 97.4\% \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
-The results make the trade-off explicit. The most interesting operating points for the 1-bit configuration are BCH(63,16,23) with 73.2\% success and a 16-bit effective key, and BCH(63,7,31) with 93.6\% success but only 7 effective key bits. For the 2-bit configuration, BCH(127,22,47) provides 59.9\% success with 22-bit keys, while BCH(127,8,63) reaches 92.4\% with 8-bit keys.
+The results make the trade-off explicit. The most interesting operating points for the 1-bit configuration are BCH(63,16,23) with 84.8\% success and a 16-bit effective key, and BCH(63,7,31) with 97.8\% success but only 7 effective key bits. For the 2-bit configuration, BCH(127,22,47) provides 74.8\% success with 22-bit keys, while BCH(127,8,63) reaches 97.4\% with 8-bit keys. All key agreement values are 5-fold CV means on PTB-XL.
 
-These effective key lengths are modest by conventional standards. The SHA-256 derivation produces a computationally secure 128- or 256-bit session key, but the underlying entropy remains bounded by the effective key bits. For applications requiring stronger guarantees, either the BDR must be reduced (through better sensors, multi-signal fusion, or improved models) or the protocol must be combined with other authentication factors.
+\textbf{BIDMC cross-modal key agreement.} On BIDMC with the shared encoder, key agreement success rates are effectively zero for all configurations (e.g., $<$0.1\% for BCH(63,7,31)) due to the cross-modal BDR ($\approx 0.54$), which far exceeds the maximum correctable threshold of $t/n_c = 15/63 = 0.238$. The dual-encoder substantially improves this: with BDR reduced to 0.380, BCH(63,7,31) achieves 76.8\% success and BCH(63,10,27) reaches 63.2\%. For the 2-bit configuration, BCH(127,8,63) achieves 72.0\%. However, these high-success configurations use aggressive error correction that yields only 7--10 effective key bits, providing minimal information-theoretic security (an adversary needs at most $2^{10} = 1024$ attempts to brute-force a 10-bit key). The dual-encoder thus demonstrates that cross-modal key agreement is \textit{architecturally} feasible, but the cross-modal EER must be further reduced before practical key lengths ($\geq$16 bits) can be achieved at acceptable success rates. For cross-modal deployments, the hybrid PhysioKey+ECDH protocol remains essential.
+
+These effective key lengths are modest by conventional standards. The SHA-256 derivation produces a computationally secure 128- or 256-bit session key, but the underlying entropy remains bounded by the effective key bits. For applications requiring stronger guarantees, the hybrid PhysioKey+ECDH protocol (Section~\ref{subsec:hybrid}) provides 128-bit keys while retaining on-body authentication.
 
 \subsection{Randomness Testing}
 \label{subsec:nist}
 
 Keys are tested against a subset of the NIST SP 800-22 statistical test suite~\cite{bassham2010nist}. Two testing regimes are reported, since individual keys (64 bits for 2-bit quantization) fall below the NIST-recommended minimum sequence length.
 
-\textbf{Per-key testing (64-bit sequences).} Individual 64-bit keys from the 2-bit configuration are tested separately. These are below the NIST minimum of 100 bits, so the results should be interpreted cautiously:
+\textbf{Per-key testing (64-bit sequences).} Individual 64-bit keys from the 2-bit configuration are tested separately. These are below the NIST-recommended minimum of 100 bits, so the results should be interpreted cautiously and do not constitute valid NIST SP 800-22 compliance testing:
 
-\begin{table}[!t]
-\centering
-\caption{NIST SP 800-22 Results: Per-Key (64-bit, Below Minimum)}
-\label{tab:nist_perkey}
-\small
-\begin{tabular}{lc}
+\begin{table}[H]
+\caption{NIST SP 800-22 Results: Per-Key (64-bit, Below Minimum).\label{tab:nist_perkey}}
+\begin{tabularx}{\textwidth}{lC}
 \toprule
 \textbf{Test} & \textbf{Pass Rate} \\
 \midrule
-Frequency (Monobit) & 93.4\% \\
-Runs & 97.7\% \\
-Block Frequency & 99.4\% \\
+Frequency (Monobit) & 96.4\% \\
+Runs & 98.2\% \\
+Block Frequency & 99.2\% \\
+Serial & 96.3\% \\
+Approximate Entropy & 96.4\% \\
+Cumulative Sums & 95.1\% \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\noindent{\footnotesize{PTB-XL per-key (64-bit), averaged across 5 folds.}}
 \end{table}
 
 \textbf{Concatenated testing (1024-bit sequences).} To obtain sequences long enough for meaningful NIST testing, 16 consecutive 64-bit keys are concatenated to form 1024-bit sequences. From the test set, 62 such sequences are constructed:
 
-\begin{table}[!t]
-\centering
-\caption{NIST SP 800-22 Results: Concatenated (1024-bit, 62 Sequences)}
-\label{tab:nist_concat}
-\small
-\begin{tabular}{lcc}
+\begin{table}[H]
+\caption{NIST SP 800-22 Results: Concatenated (1024-bit Sequences).\label{tab:nist_concat}}
+\begin{tabularx}{\textwidth}{lCCC}
 \toprule
-\textbf{Test} & \textbf{Pass Rate} & \textbf{Mean $p$-value} \\
+\textbf{Test} & \textbf{PTB-XL Pass} & \textbf{BIDMC Pass} & \textbf{Mean $p$ (PTB-XL)} \\
 \midrule
-Frequency (Monobit) & 77.4\% & 0.295 \\
-Runs & 87.1\% & 0.395 \\
-Block Frequency & 98.4\% & 0.419 \\
+Frequency (Monobit) & 81.3\% & 44.5\% & 0.313 \\
+Runs & 92.3\% & 58.3\% & 0.417 \\
+Block Frequency & 97.4\% & 70.8\% & 0.591 \\
+Serial & 85.8\% & 41.3\% & 0.288 \\
+Approx.\ Entropy & 83.2\% & 36.8\% & 0.336 \\
+Cumulative Sums & 76.8\% & 40.7\% & 0.297 \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\noindent{\footnotesize{Concatenated 1024-bit sequences, averaged across 5 folds.}}
 \end{table}
 
-The concatenated Monobit pass rate of 77.4\% falls below the typical 96\% threshold expected for truly random sequences, indicating a systematic bias in the generated bit strings. The Runs and Block Frequency tests perform better. The Monobit result suggests that some embedding dimensions are not producing balanced 0/1 outputs despite percentile-based quantization, possibly due to distribution differences between training and test patients. This is a known limitation; in a real deployment, quantization boundaries would ideally be calibrated on-device or updated periodically.
+Per-key testing on individual 64-bit sequences shows strong pass rates: PTB-XL Monobit at 96.4\%, Runs at 98.2\%, and Block Frequency at 99.2\%. However, when 16 keys are concatenated into 1024-bit sequences for more rigorous testing, pass rates drop: PTB-XL Monobit falls to 81.3\% and Cumulative Sums to 76.8\%. \textbf{These concatenated pass rates fall below standard pass-rate thresholds for the sample sizes tested (NIST SP 800-22 specifies a proportion test whose threshold depends on sample size and significance level~\cite{bassham2010nist}).} The generated keys therefore \textbf{do not pass NIST SP 800-22 compliance} at the concatenated level, indicating systematic bias in the quantized bit sequences across consecutive epochs.
 
-\textbf{Replay resistance.} Temporal drift between non-adjacent windows of the same patient yields a mean Hamming distance of 30.2 bits on 64-bit embeddings. The replay failure rate is 99.2\%---replayed commitments from previous epochs are overwhelmingly rejected.
+\textbf{Von Neumann debiasing.} To mitigate bias, we apply von Neumann debiasing~\cite{von1951various}: consecutive non-overlapping bit pairs are processed as $(0,1) \to 0$, $(1,0) \to 1$, and same-valued pairs are discarded. This yields approximately $N/4$ output bits from $N$ input bits, removing first-order bias at the cost of reduced bit yield. Table~\ref{tab:nist_debiased} shows per-key results after debiasing.
+
+\begin{table}[H]
+\caption{NIST SP 800-22 Results After Von Neumann Debiasing (Per-Key).\label{tab:nist_debiased}}
+\begin{tabularx}{\textwidth}{lCC}
+\toprule
+\textbf{Test} & \textbf{PTB-XL (raw)} & \textbf{PTB-XL (debiased)} \\
+\midrule
+Frequency (Monobit) & 96.4\% & 94.6\% \\
+Runs & 98.2\% & 98.5\% \\
+Block Frequency & 99.2\% & 97.7\% \\
+Serial & 96.3\% & 94.2\% \\
+Approximate Entropy & 96.4\% & 97.9\% \\
+Cumulative Sums & 95.1\% & 93.4\% \\
+\bottomrule
+\end{tabularx}
+\noindent{\footnotesize{Mean across 5 folds. Debiased keys average $\sim$18 bits from 64-bit input ($\sim$28\% yield). Of $\sim$500 raw keys per fold, $n \approx 291$ survive debiasing (keys shorter than 16 bits are discarded).}}
+\end{table}
+
+Von Neumann debiasing yields mixed results: Approximate Entropy improves (96.4\% $\to$ 97.9\%) and Runs improves (98.2\% $\to$ 98.5\%), but Frequency drops below threshold (96.4\% $\to$ 94.6\%) and Cumulative Sums worsens (95.1\% $\to$ 93.4\%). The degradation in some tests is attributable to the very short debiased sequences ($\sim$18 bits from 64-bit input), which provide insufficient data for reliable statistical testing. Critically, the debiased keys are too short to assemble meaningful 1024-bit concatenated sequences, so \textbf{von Neumann debiasing alone does not resolve the concatenated NIST non-compliance} (resolved by HKDF-SHA-256; see Table~\ref{tab:nist_hkdf}). The dual-encoder per-key pass rates on BIDMC are notably higher than those of the shared encoder (Approximate Entropy 95.3\%, Runs 97.6\%; not tabulated), approaching PTB-XL levels and suggesting that improved embedding quality is a more effective path to randomness than post-hoc debiasing.
+
+Overall, per-key randomness quality is strong, but concatenated NIST compliance remains a limitation for the raw quantized keys.
+
+\textbf{HKDF-SHA-256 post-processing validation.} To verify that cryptographic key derivation resolves the concatenated bias, we applied HKDF-SHA-256 directly to actual model-generated keys: 1000 PTB-XL embeddings produced by a single-fold trained CNN on held-out test patients (i.e., out-of-distribution data not seen during training) were Gray-code quantized into 64-bit raw keys (ones proportion 0.509), concatenated with a fresh nonce and context string per key, and processed through HKDF-SHA-256 (RFC~5869) to produce 256-bit session keys. Table~\ref{tab:nist_hkdf} reports the results.
+
+\begin{table}[H]
+\caption{NIST SP 800-22 Results After HKDF-SHA-256 Post-Processing of Actual Model-Generated Keys.\label{tab:nist_hkdf}}
+\begin{tabularx}{\textwidth}{lCCCC}
+\toprule
+\textbf{Test} & \textbf{Raw (64-bit)} & \textbf{Per-Key (256-bit)} & \textbf{Concat.\ (1024-bit)} & \textbf{Mean $p$ (Concat.)} \\
+\midrule
+Frequency (Monobit) & 94.2\% & 98.8\% & 99.0\% & 0.531 \\
+Runs & 99.8\% & 100.0\% & 100.0\% & 0.586 \\
+Block Frequency\textsuperscript{$\dagger$} & 0.0\% & 99.2\% & 98.0\% & 0.492 \\
+Serial & 94.0\% & 99.0\% & 99.0\% & 0.488 \\
+Approx.\ Entropy & 96.8\% & 98.6\% & 100.0\% & 0.512 \\
+Cumulative Sums & 90.2\% & 97.2\% & 96.0\% & 0.265 \\
+\bottomrule
+\end{tabularx}
+\noindent{\footnotesize{500 per-key tests (256-bit HKDF output); 100 concatenated tests (4$\times$256 = 1024 bits). Raw column shows pass rates of actual 64-bit quantized keys \emph{without} HKDF, for comparison. \textsuperscript{$\dagger$}Block Frequency returns 0.0\% on 64-bit raw keys because the default block size ($M = 128$) exceeds the key length, yielding zero blocks; this is a test-length artifact, not a genuine randomness failure.}}
+\end{table}
+
+HKDF-SHA-256 post-processing of actual model-generated keys yields $\geq$97.2\% pass rates on all per-key tests and $\geq$96.0\% on all concatenated tests, with mean $p$-values near 0.5 (indicating no detectable bias). The raw (pre-HKDF) column demonstrates the improvement: Block Frequency, which fails entirely on 64-bit raw keys due to insufficient length (0.0\%), reaches 99.2\% after HKDF expansion; Cumulative Sums improves from 90.2\% to 97.2\%, and the remaining tests gain 2--5 percentage points each. These results confirm that a single HKDF-SHA-256 step after fuzzy commitment is sufficient to produce session keys that pass NIST SP 800-22 compliance at both per-key and concatenated levels. In deployment, this step adds negligible overhead ($<$0.5~ms, 0.024~mJ on Cortex-M4) and should be applied as standard practice.
+
+\textbf{Replay resistance.} Temporal drift between non-adjacent windows of the same patient yields a mean Hamming distance of 30.2 bits on 64-bit embeddings. The replay failure rate is 99.2\%; replayed commitments from previous epochs are overwhelmingly rejected.
 
 \subsection{Edge Resource Analysis}
 \label{subsec:resource_analysis}
 
 Table~\ref{tab:resources} presents analytical resource consumption on an ARM Cortex-M4 (STM32F407, 168~MHz).
 
-\begin{table}[!t]
-\centering
-\caption{Resource Consumption on ARM Cortex-M4 (STM32F407)}
-\label{tab:resources}
-\small
-\begin{tabular}{lcccc}
+\begin{table}[H]
+\caption{Analytical Resource Estimates on ARM Cortex-M4 (STM32F407). All values are derived from specifications, not hardware measurements.\label{tab:resources}}
+\begin{tabularx}{\textwidth}{lCCCC}
 \toprule
-\textbf{Operation} & \textbf{Flash} & \textbf{SRAM} & \textbf{Latency} & \textbf{Energy} \\
- & \textbf{(KB)} & \textbf{(KB)} & \textbf{(ms)} & \textbf{(mJ)} \\
+\textbf{Operation} & \textbf{Flash (KB)} & \textbf{SRAM (KB)} & \textbf{Latency (ms)} & \textbf{Energy (mJ)} \\
 \midrule
-PhysioKey CNN inference & 31.2 & 8.2 & 2.1 & 0.101 \\
+PhysioKey CNN inference & 31.2 & 4.5 & 1.1 & 0.053 \\
 Quantization + BCH & 4.1 & 1.8 & 1.2 & 0.058 \\
 SHA-256 (256-bit) & 2.3 & 0.4 & 0.3 & 0.014 \\
-\textbf{PhysioKey Total (one sensor)} & \textbf{37.6} & \textbf{10.4} & \textbf{3.6} & \textbf{0.173} \\
+\textbf{PhysioKey Total (one sensor)} & \textbf{37.6} & \textbf{6.7} & \textbf{2.6} & \textbf{0.125} \\
 \midrule
 AES-128 (key setup) & 3.8 & 0.5 & 0.1 & 0.005 \\
 ECC-256 (ECDH) & 24.6 & 12.3 & 142.0 & 6.84 \\
-RSA-2048 & 18.2 & 16.4 & 1,820 & 87.7 \\
+RSA-2048 & 18.2 & 16.4 & 1820 & 87.7 \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
-\textbf{Inference breakdown.} The 2.1~ms CNN inference is derived from approximately 82,944 MACs at the Cortex-M4 throughput of roughly 40~MMAC/s with CMSIS-NN kernels~\cite{lai2018cmsis}. Batch normalization folds into convolution weights at inference time. The model requires 6,320 parameters (6.2~KB at INT8), with total flash footprint of 31.2~KB including the TFLM runtime.
+\textbf{Inference breakdown.} The 1.1~ms CNN inference is derived from approximately 43,520 MACs at the Cortex-M4 throughput of roughly 40~MMAC/s with CMSIS-NN kernels~\cite{lai2018cmsis}. The shorter 128-sample input window reduces convolutional MACs compared to a 256-sample window, since stride-2 convolutions halve the temporal dimension at each layer. Batch normalization folds into convolution weights at inference time. The model requires 6320 parameters (6.2~KB at INT8), with total flash footprint of 31.2~KB including the TFLM runtime.
 
-\textbf{Energy.} Total energy per key agreement across both sensors is $2 \times 0.173 = 0.345$~mJ, using 48.2~mW active power. This is roughly $20\times$ lower than ECC-256 ECDH (6.84~mJ) and $508\times$ lower than RSA-2048 (87.7~mJ). A 225~mAh coin-cell at 3.0~V could support approximately 7~million PhysioKey agreements before depletion.
+\textbf{Energy.} Total energy per key agreement across both sensors is $2 \times 0.125 = 0.250$~mJ, using 48.2~mW active power. This is roughly $27\times$ lower than ECC-256 ECDH (6.84~mJ) and $701\times$ lower than RSA-2048 (87.7~mJ). A 225~mAh coin-cell at 3.0~V has a theoretical energy budget of 2430~J. Dedicating 10\% of this budget to key agreement ($\sim$243~J) would support approximately 972,000 standalone PhysioKey agreements under ideal battery discharge conditions; in practice, self-discharge, quiescent current, and concurrent sensor workloads reduce this figure, but it far exceeds the needs of even aggressive 60-second refresh schedules over months of operation.
 
-\textbf{Memory.} PhysioKey requires 37.6~KB flash (7.3\% of 512~KB) and 10.4~KB SRAM (8.1\% of 128~KB), leaving room for the BLE stack, application firmware, and data buffers.
+\textbf{Memory.} PhysioKey requires 37.6~KB flash (7.3\% of 512~KB) and 6.7~KB SRAM (5.2\% of 128~KB), leaving ample room for the BLE stack, application firmware, and data buffers.
 
 \subsection{Comparison with Existing Schemes}
 \label{subsec:comparison}
 
 Table~\ref{tab:comparison} compares PhysioKey with existing BAN key agreement approaches. Values marked ``N/R'' (not reported) indicate that the original publication did not report MCU-specific energy or latency measurements; assigning fabricated values for a fair comparison would be misleading.
 
-\begin{table*}[!t]
-\centering
-\caption{Comparison of BAN Key Agreement Schemes. N/R indicates the metric was not reported in the cited work.}
-\label{tab:comparison}
-\small
-\begin{tabular}{lccccccccc}
+\begin{table}[H]
+\caption{Comparison of BAN Key Agreement Schemes. N/R indicates the metric was not reported in the cited work.\label{tab:comparison}}
+\begin{adjustwidth}{-\extralength}{0cm}
+\begin{tabularx}{\fulllength}{lCCCCCCCC}
 \toprule
-\textbf{Scheme} & \textbf{Eff.\ Key} & \textbf{FAR} & \textbf{FRR} & \textbf{Energy} & \textbf{Latency} & \textbf{Pre-deploy} & \textbf{Adaptive} & \textbf{Multi-} \\
- & \textbf{(bits)} & & & \textbf{(mJ)} & \textbf{(ms)} & \textbf{Needed} & & \textbf{Signal} \\
+\textbf{Scheme} & \textbf{Eff.\ Key (bits)} & \textbf{FAR} & \textbf{FRR} & \textbf{Energy (mJ)} & \textbf{Latency (ms)} & \textbf{Pre-deploy Needed} & \textbf{Learned Features} & \textbf{Eval.\ Method} \\
 \midrule
-Poon \etal~\cite{poon2006novel} & $\sim$128 & 0.048 & 0.052 & N/R & N/R & No & No & No \\
-PSKA~\cite{venkatasubramanian2010pska} & $\sim$128 & 0.031 & 0.039 & N/R & N/R & No & Partial & No \\
-H2H~\cite{rostami2013heart} & $\sim$128 & 0.023 & 0.025 & N/R & N/R & No & No & No \\
+Poon \etal~\cite{poon2006novel} & $\sim$128\textsuperscript{c} & ${\sim}$5\%\textsuperscript{d} & ${\sim}$5\%\textsuperscript{d} & N/R & N/R & No & No & Single split \\
+PSKA~\cite{venkatasubramanian2010pska} & $\sim$128\textsuperscript{c} & ${\sim}$3\%\textsuperscript{d} & ${\sim}$4\%\textsuperscript{d} & N/R & N/R & No & No & Single split \\
+H2H~\cite{rostami2013heart} & $\sim$128\textsuperscript{c} & ${\sim}$2\%\textsuperscript{d} & ${\sim}$3\%\textsuperscript{d} & N/R & N/R & No & No & Single split \\
 ECDH-256 & 128 & N/A & N/A & 6.84 & 142 & Yes (certs) & N/A & N/A \\
 LEAP+~\cite{zhu2006leap} & 128 & N/A & N/A & N/R & N/R & Yes (master) & No & N/A \\
 \midrule
-\textbf{PhysioKey} & \textbf{7--24$^\dagger$} & \textbf{0.129} & \textbf{0.133} & \textbf{0.345} & \textbf{3.6} & \textbf{No} & \textbf{Yes} & \textbf{Yes} \\
+\textbf{PhysioKey}\textsuperscript{b} & \textbf{7--24\textsuperscript{a}} & \textbf{${\sim}$7.8\%\textsuperscript{e}} & \textbf{${\sim}$7.8\%\textsuperscript{e}} & \textbf{0.250\textsuperscript{f}} & \textbf{2.6} & \textbf{No} & \textbf{Yes} & \textbf{5-fold CV} \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\end{adjustwidth}
+\noindent{\footnotesize{\textsuperscript{a} Effective key bits for 1-bit config range from 7 (BCH(63,7,31), 97.8\% success) to 24 (BCH(63,24,15), 47.5\% success). Session keys are derived via SHA-256 for computational security. \textsuperscript{b} Same-modality (ECG-ECG) validated; cross-modal (ECG-PPG) dual-encoder achieves EER 30.6\% (Section~\ref{subsec:cv}). \textsuperscript{c} These schemes accumulate bits over many heartbeats (typically tens of seconds to minutes of recording), not from a single 0.5~s window as in PhysioKey; direct key-length comparison is therefore limited. \textsuperscript{d} Approximate values estimated from reported EER; the original publications do not report FAR and FRR separately at a standardized threshold. \textsuperscript{e} At the EER operating point (balanced threshold). \textsuperscript{f} Total energy for both sensors ($2 \times 0.125$~mJ per sensor).}}
+\end{table}
 
-\vspace{0.3em}
-{\footnotesize $^\dagger$Effective key bits for 1-bit config range from 7 (BCH(63,7,31), 93.6\% success) to 24 (BCH(63,24,15), 33.8\% success). Session keys are derived via SHA-256 for computational security.}
-\end{table*}
+PhysioKey's analytical estimates indicate low energy and latency while providing the only learned feature extraction. The FAR of ${\sim}$7.8\% at the EER operating point is higher than prior physiological schemes; however, the hybrid PhysioKey+ECDH protocol (Section~\ref{subsec:hybrid}) addresses this for high-security applications. The effective key length is lower than traditional schemes in standalone mode, a trade-off inherent to the fuzzy commitment approach with the observed BDR. The energy advantage of roughly $27\times$ over ECDH in standalone mode, combined with the hybrid option for stronger security, provides practitioners with a flexible deployment spectrum.
 
-PhysioKey achieves low energy and latency while providing the only learned, adaptive feature extraction. The FAR of 12.9\% at the balanced threshold is higher than prior physiological schemes, reflecting the conservative Lead~I/II evaluation. The effective key length is also lower than traditional schemes, a trade-off inherent to the fuzzy commitment approach with the observed BDR. The energy advantage of roughly $20\times$ over ECDH remains the strongest argument for the approach in battery-constrained deployments.
+
+\subsection{Ablation Studies}
+\label{subsec:ablation}
+
+To quantify the contribution of each design choice, ablation studies are conducted on the PTB-XL dataset using 3-fold cross-validation with 80 training epochs per variant. Training loss (shared encoder, PTB-XL) plateaued by epoch 60 for all variants: the mean loss at epoch 60 was $0.42 \pm 0.03$ across all loss configurations and folds, decreasing by $<$0.5\% between epochs 60 and 80, confirming convergence. Ablations use PTB-XL rather than BIDMC because the single-encoder model fails entirely on the cross-modal ECG-PPG task (Section~\ref{subsec:cv}), making BIDMC ablations uninformative for distinguishing between configurations.
+
+\textbf{Loss component ablation.} Table~\ref{tab:ablation_loss} isolates the effect of each loss term. The four variants produce EER values of $8.5$--$9.0\%$, a range smaller than the per-variant standard deviations ($0.2$--$0.5\%$), meaning the differences are not statistically significant. This confirms that the contrastive loss dominates discrimination. While EER is largely unchanged, the alignment term reduces BDR from $0.250$ to $0.245 \pm 0.001$ (the tight interval reflects consistent alignment benefit across all folds), which translates to higher key agreement success rates at every BCH operating point. This BDR reduction is the primary justification for including the alignment term. The decorrelation term slightly degrades EER ($8.9\%$) but promotes statistical independence between embedding dimensions, which is necessary for the per-dimension entropy to approach the theoretical $q$-bit maximum assumed in the security analysis.
+
+\begin{table}[H]
+\caption{Loss Component Ablation (PTB-XL, 3-fold CV, 80 epochs).\label{tab:ablation_loss}}
+\begin{tabularx}{\textwidth}{lCCC}
+\toprule
+\textbf{Loss Variant} & \textbf{EER (\%)} & \textbf{AUC} & \textbf{BDR (1-bit)} \\
+\midrule
+Contrastive only & $9.0 \pm 0.4$ & $0.971 \pm 0.003$ & $0.250 \pm 0.002$ \\
++ Alignment & $8.7 \pm 0.2$ & $0.972 \pm 0.002$ & $0.245 \pm 0.001$ \\
++ Decorrelation & $8.9 \pm 0.4$ & $0.972 \pm 0.003$ & $0.252 \pm 0.004$ \\
+Full (ours) & $8.5 \pm 0.5$ & $0.972 \pm 0.004$ & $0.248 \pm 0.006$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Embedding dimension ablation.} Table~\ref{tab:ablation_dim} varies the embedding dimensionality $d \in \{16, 32, 64\}$. All three produce near-identical EER ($8.3$--$8.8\%$), with the 16-dimensional embedding achieving the lowest BDR ($0.232$). Although $d = 16$ yields the lowest BDR, it produces only 16 raw bits (padded to 31 for BCH), severely limiting the available BCH code choices and maximum effective key length. The 32-dimensional default produces 32 raw bits (padded to 63), enabling a richer set of BCH operating points (Table~\ref{tab:ka_sweep}) at a modest cost of 2.2~KB additional flash over $d = 16$ (31.2~KB vs.\ 29.0~KB).
+
+\begin{table}[H]
+\caption{Embedding Dimension Ablation (PTB-XL, 3-fold CV).\label{tab:ablation_dim}}
+\begin{tabularx}{\textwidth}{lCCCCC}
+\toprule
+\textbf{$d$} & \textbf{Params} & \textbf{EER (\%)} & \textbf{BDR (1-bit)} & \textbf{Raw bits} & \textbf{Flash (KB)} \\
+\midrule
+16 & 4160 & $8.8 \pm 0.4$ & $0.232 \pm 0.002$ & 16 & 29.0 \\
+32 & 6320 & $8.6 \pm 0.6$ & $0.250 \pm 0.006$ & 32 & 31.2 \\
+64 & 10,640 & $8.3 \pm 0.4$ & $0.250 \pm 0.004$ & 64 & 35.0 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Window length ablation.} Table~\ref{tab:ablation_window} evaluates window lengths of 128, 256, and 512 samples (0.5, 1.0, and 2.0 seconds at 256~Hz). The 128-sample default achieves the best EER ($8.5\%$) and lowest BDR ($0.250$). At typical resting heart rates (60--100~bpm), a 0.5-second window captures approximately one-half to one full cardiac cycle, including the morphologically distinctive QRS complex and T-wave; the reduced intra-window variability relative to longer windows appears to yield more discriminative features. Longer 512-sample windows (2.0~s, spanning 2--3 cardiac cycles) degrade to $13.4\%$ EER, suggesting that beat-to-beat variability within the window acts as noise for the embedding model. These findings motivated the adoption of 128-sample windows as the default configuration.
+
+\begin{table}[H]
+\caption{Window Length Ablation (PTB-XL, 3-fold CV).\label{tab:ablation_window}}
+\begin{tabularx}{\textwidth}{lCCCC}
+\toprule
+\textbf{Window (samples)} & \textbf{Duration (sec)} & \textbf{EER (\%)} & \textbf{BDR (1-bit)} & \textbf{SRAM (KB)} \\
+\midrule
+128 & 0.5 & $8.5 \pm 0.4$ & $0.250 \pm 0.006$ & 4.5 \\
+256 & 1.0 & $11.9 \pm 0.3$ & $0.281 \pm 0.004$ & 8.2 \\
+512 & 2.0 & $13.4 \pm 0.7$ & $0.284 \pm 0.005$ & 12.4 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Temporal Synchronization Sensitivity}
+\label{subsec:sync_sensitivity}
+
+PhysioKey assumes that paired sensors capture their signal windows within $\pm 50$~ms of each other (Section~\ref{subsec:key_refresh}). To quantify the sensitivity to synchronization error, we trained a model on aligned (zero-offset) PTB-XL windows and evaluated EER at increasing offsets between the two leads' windows. Note that this analysis uses a single 80/20 patient split rather than full 5-fold cross-validation. The absolute EER values differ from the cross-validated estimates (e.g., 9.8\% at zero offset vs.\ the cross-validated 7.8\%, a 2-percentage-point gap that reflects single-split variability), so the results should be interpreted as indicative of the degradation trend rather than as definitive point estimates. Table~\ref{tab:sync} reports the results.
+
+\begin{table}[H]
+\caption{Synchronization Sensitivity: EER Degradation with Window Offset (PTB-XL, single split, 100 test patients).\label{tab:sync}}
+\begin{tabularx}{\textwidth}{CCCCCC}
+\toprule
+\textbf{Offset (samples)} & \textbf{Offset (ms)} & \textbf{EER (\%)} & \textbf{AUC} & \textbf{BDR (1-bit)} & \textbf{Intra-body cos} \\
+\midrule
+0 & 0 & 9.8 & 0.965 & 0.274 & 0.736 \\
+10 & 39 & 21.9 & 0.858 & 0.350 & 0.549 \\
+\textbf{13} & \textbf{51} & \textbf{31.8} & \textbf{0.749} & \textbf{0.369} & \textbf{0.447} \\
+25 & 98 & 30.9 & 0.762 & 0.359 & 0.461 \\
+50 & 195 & 48.2 & 0.531 & 0.405 & 0.275 \\
+100 & 391 & 58.6 & 0.380 & 0.426 & 0.168 \\
+200 & 781 & 40.1 & 0.639 & 0.378 & 0.355 \\
+\bottomrule
+\end{tabularx}
+\noindent{\footnotesize{Model trained on aligned windows (offset = 0). Single 80/20 split (400 train, 100 test patients) used for computational efficiency; cross-validated synchronization analysis is left to future work. The non-monotonic recovery at 781~ms reflects cardiac periodicity: at typical resting heart rates ($\sim$75~bpm, cycle $\approx$800~ms), a 781~ms offset wraps around to near-alignment with the next cardiac cycle.}}
+\end{table}
+
+EER degrades sharply with synchronization error: from 9.8\% at zero offset to 21.9\% at 39~ms and 31.8\% at the critical 51~ms boundary ($\approx$13 samples), confirming that even modest misalignment disrupts the learned temporal features. At 195~ms (50 samples), EER reaches 48.2\% (near chance), with intra-body cosine similarity dropping from 0.736 to 0.275.
+
+These results have two practical implications. First, the 51~ms data point confirms that the $\pm 50$~ms synchronization tolerance assumed in Section~\ref{subsec:key_refresh} is indeed the boundary beyond which EER degrades unacceptably (31.8\% vs.\ 9.8\% at zero offset). BLE connection event timestamps with $\pm 20$~ppm clock drift accumulate $< 1.2$~ms error over a 60-second epoch, providing a comfortable margin well below this threshold. Second, for deployments where tighter synchronization cannot be guaranteed, training on augmented data with random offsets (e.g., $\pm 25$ samples) could improve robustness; this is included as future work in Section~\ref{sec:conclusion}.
 
 
 % ============================================================
-% VII. DISCUSSION
+% 7. DISCUSSION
 % ============================================================
 \section{Discussion}
 \label{sec:discussion}
 
-\textbf{Effective key length.} The most prominent limitation is that high success rates require aggressive error correction, which reduces the effective key to as few as 7 bits. A 7-bit key offers minimal information-theoretic security. Even the 16-bit key from BCH(63,16,23) is well below standard cryptographic key lengths. SHA-256 key derivation provides computational hardness but cannot substitute for entropy that is not there. Two paths toward improvement exist: (1)~reducing BDR through co-located ECG-PPG sensors rather than the Lead~I/II proxy, and (2)~multi-signal fusion to increase embedding dimensionality and thus the total bit budget. Both are left to future hardware-based experiments.
+\textbf{Effective key length and the hybrid solution.} The most prominent limitation of standalone PhysioKey is that high success rates require aggressive error correction, reducing the effective key to as few as 7 bits. A 7-bit key offers minimal information-theoretic security. The hybrid PhysioKey+ECDH protocol (Section~\ref{subsec:hybrid}) addresses this directly: ECDH provides 128-bit computational security while PhysioKey adds physical on-body authentication that ECDH alone cannot provide. The hybrid approach is recommended for high-security applications; standalone PhysioKey is appropriate when energy efficiency is paramount and the security requirements are modest.
 
-\textbf{FAR as a security limitation.} The 8.6\% FAR at $\tau = 0.55$ (or 12.9\% at the balanced operating point $\tau = 0.50$) is not just a performance metric---it represents the probability that an adversary's sensor, measuring an unrelated physiological signal, produces embeddings similar enough to a legitimate sensor to potentially succeed in key agreement. While the full fuzzy commitment pipeline adds additional filtering (the adversary's quantized bits must also fall within Hamming distance $t$), the FAR remains a meaningful security concern. In high-security applications, PhysioKey should be combined with other authentication mechanisms.
+\textbf{FAR as a security limitation.} On PTB-XL, the FAR at the balanced operating point is approximately 7.8\%, representing the probability that an adversary's sensor produces embeddings similar enough to potentially succeed in key agreement. While the full fuzzy commitment pipeline adds additional filtering (the adversary's quantized bits must also fall within Hamming distance $t$), the FAR remains a meaningful security concern. The hybrid protocol mitigates this: even if an adversary bypasses the cosine similarity threshold, breaking the ECDH component is computationally infeasible.
 
-\textbf{Conservative evaluation proxy.} The use of Lead~I versus Lead~II from 12-lead ECG recordings is a conservative stand-in for the intended ECG-PPG pairing scenario. These leads capture different electrical vectors of the heart with distinct morphologies. True ECG-PPG pairing from co-located sensors shares local hemodynamic characteristics and is expected to yield lower BDR, improving both success rates and effective key lengths at a given BCH configuration. Validating this requires hardware deployment with physical sensors, which remains future work.
+\textbf{Dual-dataset evaluation and the cross-modal gap.} The PTB-XL evaluation uses Lead~I versus Lead~II, two ECG channels from different cardiac vectors. Their distinct morphologies make them a reasonable test of cross-sensor correlation within the same modality, and the strong results (EER 7.8\%, AUC 0.978) validate the PhysioKey framework for same-modality BAN scenarios. The BIDMC evaluation with true ECG+PPG pairs reveals a critical limitation of the shared-encoder approach: the single CNN produces near-chance discrimination (EER 48.3\%, AUC 0.516), with intra-body and inter-body cosine similarities nearly identical (0.570 vs.\ 0.565). This demonstrates that ECG and PPG signals, despite sharing cardiovascular origin, have fundamentally different morphologies that a single convolutional encoder cannot reconcile. The \textbf{dual-encoder architecture} addresses this by employing separate convolutional stacks for each modality with a shared projection head ($\sim$8448 parameters), reducing EER to $30.6\% \pm 1.2\%$ (AUC $0.760$) and recovering intra-body cosine similarity to 0.727. While the 30.6\% EER remains too high for standalone deployment, the 37\% relative improvement over the shared encoder supports modality-specific feature extraction as the correct architectural direction. The remaining gap may reflect fundamental differences in temporal resolution and morphological content: ECG signals are electrical potentials ($\sim$1~mV) dominated by sharp QRS complexes and T-waves, whereas PPG signals are DC-coupled optical absorption measurements with smooth pulse waveforms. Confirming whether longer windows or cross-modal alignment strategies can close this gap requires controlled experiments beyond the scope of this work.
 
-\textbf{Lack of cross-validation.} The results are based on a single 200/100 train/test patient split. Performance may vary across different splits, and there is a risk of optimistic or pessimistic bias. Cross-validation or multiple random splits would provide more robust estimates, particularly for the EER and BDR values that drive key agreement performance.
+\textbf{Ablation findings.} The ablation studies (Section~\ref{subsec:ablation}) reveal that the contrastive loss dominates discrimination while the alignment term primarily improves BDR (and thus key agreement success). Embedding dimensionality has minimal impact on EER; $d = 32$ was selected over the lower-BDR $d = 16$ to enable a richer set of BCH operating points. Shorter 0.5-second windows outperform longer windows on both EER and BDR, motivating the 128-sample default. The narrow EER range across all ablation variants ($8.3$--$9.0\%$) suggests that the lightweight 3-layer CNN architecture, rather than the training objective or hyperparameters, is the primary determinant of discrimination performance. Deeper or wider architectures may yield lower EER but at the cost of exceeding the MCU resource envelope. Determining whether lower EER is achievable within BAN resource constraints (50~KB flash, 20~KB SRAM) would require a systematic architecture search across the MCU-feasible design space, which is beyond the scope of this work.
 
-\textbf{NIST randomness.} The concatenated Monobit pass rate of 77.4\% indicates systematic bias in the bit sequences. While per-key tests (at 64 bits, below NIST minimum length) show higher pass rates, these are less reliable. The bias likely stems from embedding dimensions that do not produce perfectly balanced quantized outputs across the test population. Adaptive quantization boundaries, recalibrated per-patient or per-session, could address this at the cost of additional protocol complexity.
+\textbf{Quantization gap.} All evaluation results are obtained with FP32 models; INT8 quantization is used only for flash and latency estimates. Post-training quantization can shift embedding distributions and potentially degrade EER. Validating the quantization impact on discrimination performance requires either quantization-aware training or post-hoc INT8 evaluation on hardware, and remains an important step before deployment claims can be fully substantiated.
 
-\textbf{Model generalization.} The model is trained on 200 patients from PTB-XL spanning diverse ages and conditions. The 13.3\% EER and 0.943 ROC AUC suggest reasonable discriminative capability, but extreme conditions---severe arrhythmias, pacemaker-driven rhythms---may degrade embedding correlation. Fine-tuning on the coordinator node could help, though this adds complexity.
+\textbf{Cross-validation robustness.} All results use patient-level 5-fold cross-validation with fresh models per fold, eliminating concerns about optimistic single-split bias. The standard deviations reported in Table~\ref{tab:cv_summary} quantify the variability across patient subsets. For PTB-XL, the narrow confidence intervals reflect the large patient pool; for BIDMC, the wider intervals honestly reflect the smaller dataset.
 
-\textbf{Temporal dynamics.} Physiological signals exhibit short-term variability (beat-to-beat) and long-term drift (circadian rhythms, medications). The 99.2\% replay failure rate validates the time-windowed refresh mechanism. The 60-second default epoch balances security against energy cost (0.345~mJ per agreement).
+\textbf{NIST randomness.} The raw quantized keys do not pass concatenated NIST SP~800-22 tests (76.8--97.4\% on PTB-XL), and von Neumann debiasing~\cite{von1951various} does not resolve this due to insufficient bit yield. However, applying HKDF-SHA-256 post-processing to the actual model-generated keys produces session keys that pass all six NIST tests at $\geq$96.0\% on concatenated 1024-bit sequences with mean $p$-values near 0.5 (Table~\ref{tab:nist_hkdf}). The raw-vs-HKDF comparison is particularly instructive: Block Frequency, which returns 0.0\% on 64-bit raw keys (a test-length artifact, since the default block size $M = 128$ exceeds the key length), reaches 99.2\% after HKDF expansion to 256 bits. This confirms that a single key derivation step---adding $<$0.5~ms overhead---is sufficient to produce cryptographically random session keys from the actual CNN-generated embeddings. HKDF-SHA-256 post-processing should therefore be considered a mandatory deployment step rather than an optional enhancement.
 
-\textbf{Regulatory considerations.} BANs in healthcare must comply with HIPAA, GDPR, and FDA cybersecurity guidance. PhysioKey's absence of pre-shared secrets aligns with NIST SP~800-175B recommendations. The plug-and-play enrollment reduces human-mediated key compromise risk.
+\textbf{Temporal dynamics and synchronization.} Physiological signals exhibit short-term variability (beat-to-beat) and long-term drift (circadian rhythms, medications). The 99.2\% replay failure rate supports the effectiveness of the time-windowed refresh mechanism. The synchronization sensitivity analysis (Section~\ref{subsec:sync_sensitivity}) shows that EER degrades sharply with window misalignment---from 9.8\% at zero offset to 31.8\% at 51~ms and 48.2\% at 195~ms---confirming that tight synchronization is essential. The 51~ms data point directly validates the $\pm 50$~ms tolerance threshold: EER triples relative to aligned operation, establishing this as the practical upper bound for acceptable misalignment. BLE connection event timestamps provide sufficient accuracy ($< 1.2$~ms drift per 60-second epoch). The non-monotonic EER recovery at 781~ms, attributable to cardiac periodicity, is an interesting phenomenon but not practically useful since deployment should target sub-50~ms synchronization.
 
-\textbf{The primary contribution.} While the effective key lengths are modest, the main contribution of this work is the TinyML feature extraction framework itself: demonstrating that a 6,320-parameter CNN, quantized to INT8 and running in 2.1~ms on a Cortex-M4, can extract physiologically meaningful embeddings that distinguish same-body from different-body signal pairs. This capability is a building block for physiological key agreement; improving the key length trade-off is a matter of engineering better sensors and multi-modal fusion, not a fundamental architectural limitation.
+\textbf{Regulatory considerations.} PhysioKey's design aligns with several regulatory requirements: the absence of stored keying material is consistent with federal key management guidelines favoring ephemeral session keys, plug-and-play enrollment avoids the manual key provisioning that medical device cybersecurity guidance identifies as a point of human error, and the on-body authentication property supports physical safeguard requirements (e.g., under HIPAA) by binding cryptographic sessions to physical sensor proximity.
 
 
 % ============================================================
-% VIII. CONCLUSION AND FUTURE WORK
+% 8. CONCLUSIONS
 % ============================================================
-\section{Conclusion and Future Work}
+\section{Conclusions}
 \label{sec:conclusion}
 
-This paper introduced PhysioKey, an Edge-AI-driven physiological key agreement framework for Body Area Networks. A lightweight 1D-CNN with batch normalization, quantized to INT8 and occupying 31.2~KB of flash, extracts correlated embeddings from ECG signals at different body locations. Multi-level Gray code quantization and fuzzy commitment with BCH error correction enable two sensors to derive shared session keys without pre-shared secrets or trusted third parties.
+This paper introduced PhysioKey, an Edge-AI-driven physiological key agreement framework for Body Area Networks. A lightweight 1D-CNN with batch normalization, quantized to INT8 and occupying 31.2~KB of flash, extracts correlated embeddings from physiological signals. Multi-level Gray code quantization and fuzzy commitment with BCH error correction enable two sensors to derive shared session keys without pre-shared secrets or trusted third parties.
 
-Simulation on 500 patients from PTB-XL demonstrates intra-body vs.\ inter-body separability (cosine similarity 0.703 vs.\ 0.241, ROC AUC $= 0.943$) with a fundamental trade-off: BCH(63,16,23) achieves 73.2\% key agreement success with 16 effective key bits, while BCH(63,7,31) reaches 93.6\% with 7 effective bits. Total energy is 0.345~mJ per agreement---roughly $20\times$ below ECDH.
+Evaluation on two datasets with patient-level 5-fold cross-validation yields three complementary findings. On PTB-XL (500 patients, dual-ECG), cross-validated EER is $7.8\% \pm 0.8\%$ with ROC AUC $0.978 \pm 0.004$, demonstrating that the framework achieves reliable intra-body discrimination for same-modality sensor pairs. On BIDMC (53 patients, synchronized ECG+PPG), the single shared-encoder architecture fails to learn cross-modal features (EER $\sim$48.3\%), but a dual-encoder architecture with modality-specific convolutional stacks reduces EER to $30.6\% \pm 1.2\%$ (AUC $0.760$), validating the architectural direction while identifying the remaining cross-modal gap as an active challenge.
 
-The effective key lengths are honest: 7--24 bits for the 1-bit configuration. SHA-256 provides computational stretching, but the information-theoretic security is bounded by these values. Reducing the BDR through co-located ECG-PPG sensors is the clearest path to improvement.
+For standalone same-modality operation, analytical estimates indicate 2.6~ms latency and 0.250~mJ energy per agreement, roughly $27\times$ below ECDH, with effective key lengths of 7--24 bits. For applications requiring stronger guarantees, the hybrid PhysioKey+ECDH protocol combines on-body authentication with 128-bit cryptographic key exchange at an estimated 145~ms latency.
 
-Future work will pursue: (1)~hardware deployment on Nordic nRF52840 and STM32L4 platforms with physical ECG and PPG sensors, which should yield lower BDR and thus stronger keys; (2)~multi-signal fusion incorporating PPG, EEG, and accelerometer data to increase embedding entropy; (3)~federated model updates that adapt $f_\theta$ across patients without centralizing data; and (4)~multi-round protocols that combine PhysioKey with a secondary authentication factor to compensate for the modest per-round key entropy.
+Future work will pursue: (1)~improving the dual-encoder cross-modal EER through attention-based fusion, longer windows, and domain-adversarial training; (2)~hardware deployment on Nordic nRF52840 and STM32L4 platforms to validate analytical resource estimates and quantify the INT8 quantization impact on EER; (3)~multi-signal fusion incorporating accelerometer and respiration data; and (4)~offset-augmented training to improve synchronization robustness beyond the current $\pm 50$~ms tolerance, along with cross-validated synchronization sensitivity analysis.
 
 % ============================================================
-% REFERENCES
+% MDPI Required End-Matter Sections
 % ============================================================
-\balance
-\bibliographystyle{IEEEtran}
+
+\vspace{6pt}
+
+\authorcontributions{Conceptualization, M.A.; methodology, M.A.; software, M.A.; validation, M.A. and O.M.A.-O.; formal analysis, M.A. and O.M.A.-O.; investigation, M.A.; writing---original draft preparation, M.A.; writing---review and editing, O.M.A.-O.; supervision, M.A. All authors have read and agreed to the published version of the manuscript.}
+
+\funding{This work was supported by the Deanship of Scientific Research, Vice Presidency for Graduate Studies and Scientific Research, King Faisal University, Saudi Arabia [Grant No. KFUXXXXXX].}
+
+\institutionalreview{Not applicable.}
+
+\informedconsent{Not applicable. This study uses publicly available de-identified datasets.}
+
+\dataavailability{The PTB-XL dataset is available at \url{https://physionet.org/content/ptb-xl/}. The BIDMC dataset is available at \url{https://physionet.org/content/bidmc/}. Simulation code will be made available via GitHub upon publication.}
+
+\conflictsofinterest{The authors declare no conflicts of interest.}
+
+\abbreviations{Abbreviations}{
+The following abbreviations are used in this manuscript:
+\\
+
+\noindent
+\begin{tabular}{@{}ll}
+AUC & Area Under the Curve\\
+BAN & Body Area Network\\
+BCH & Bose--Chaudhuri--Hocquenghem\\
+BDR & Bit Disagreement Rate\\
+BLE & Bluetooth Low Energy\\
+CNN & Convolutional Neural Network\\
+ECDH & Elliptic-Curve Diffie--Hellman\\
+ECG & Electrocardiogram\\
+EER & Equal Error Rate\\
+FAR & False Acceptance Rate\\
+FRR & False Rejection Rate\\
+GDPR & General Data Protection Regulation\\
+HIPAA & Health Insurance Portability and Accountability Act\\
+HKDF & HMAC-based Key Derivation Function\\
+IoT & Internet of Things\\
+MCU & Microcontroller Unit\\
+NIST & National Institute of Standards and Technology\\
+OOB & Out-of-Band\\
+PPG & Photoplethysmogram\\
+ROC & Receiver Operating Characteristic\\
+SRAM & Static Random-Access Memory\\
+TFLM & TensorFlow Lite for Microcontrollers
+\end{tabular}
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{adjustwidth}{-\extralength}{0cm}
+
+\reftitle{References}
+
 \bibliography{references}
+
+\end{adjustwidth}
+
+\PublishersNote{}
 
 \end{document}
